@@ -78,15 +78,22 @@ function App() {
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [roleGroups, setRoleGroups] = useState<Record<string, UserListItem[]>>({});
+  // const [createUserForm, setCreateUserForm] = useState({
+  //   username: '',
+  //   collegeId: '',
+  //   email: '',
+  //   firstName: '',
+  //   lastName: '',
+  //   password: '',
+  //   role: '',
+  // });
   const [createUserForm, setCreateUserForm] = useState({
-    username: '',
-    collegeId: '',
-    email: '',
-    firstName: '',
-    lastName: '',
-    password: '',
-    role: '',
+  username: '', collegeId: '', email: '', firstName: '', lastName: '', password: '',
+  role: user?.role === 'SUPER_ADMIN' ? 'ADMIN' : 'TEACHER',
+  dob: '', joiningDate: '', yearsOfExperience: '', phoneNumber: '', // NEW
   });
+  const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null); // NEW
+  const [teacherDocuments, setTeacherDocuments] = useState<File[]>([]);        // NEW
   const [createUserError, setCreateUserError] = useState('');
   const [createUserSuccess, setCreateUserSuccess] = useState('');
   const [isCreatingUser, setIsCreatingUser] = useState(false);
@@ -205,14 +212,20 @@ const [activePage, setActivePage] = useState<'overview' | 'users' | 'students' |
 
     try {
       const token = localStorage.getItem('collegePortalToken');
+      // after
+      const formData = new FormData();
+      Object.entries(createUserForm).forEach(([key, value]) => {
+        if (value) formData.append(key, value as string);
+      });
+      if (createUserForm.role === 'TEACHER') {
+        if (profilePhotoFile) formData.append('profilePhoto', profilePhotoFile);
+        teacherDocuments.forEach((file) => formData.append('documents', file));
+      }
+
       const response = await axios.post(
         `${API_URL}/api/auth/register`,
-        createUserForm,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
+        formData,
+        { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } },
       );
 
       setCreateUserSuccess(response.data.message || 'User created successfully.');
@@ -224,6 +237,10 @@ const [activePage, setActivePage] = useState<'overview' | 'users' | 'students' |
         lastName: '',
         password: '',
         role: user?.role === 'SUPER_ADMIN' ? 'ADMIN' : 'TEACHER',
+        dob: '',
+        joiningDate: '',
+        yearsOfExperience: '',
+        phoneNumber: '',
       });
       await fetchUsers();
     } catch (err) {
@@ -693,6 +710,29 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           <input type="email" value={createUserForm.email} onChange={(e) => setCreateUserForm((current) => ({ ...current, email: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
                         </div>
                         <div>
+                          <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Profile picture</label>
+                          <input type="file" accept="image/*" onChange={(e) => setProfilePhotoFile(e.target.files?.[0] ?? null)} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-2.5 outline-none file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-white`} />
+                        </div>
+                        <div>
+                          <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Phone number</label>
+                          <input type="tel" value={createUserForm.phoneNumber} onChange={(e) => setCreateUserForm((c) => ({ ...c, phoneNumber: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                        </div>
+                        <div>
+                          <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Date of birth</label>
+                          <input type="date" value={createUserForm.dob} onChange={(e) => setCreateUserForm((c) => ({ ...c, dob: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                        </div>
+                        <div>
+                          <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Joining date</label>
+                          <input type="date" value={createUserForm.joiningDate} onChange={(e) => setCreateUserForm((c) => ({ ...c, joiningDate: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Upload documents</label>
+                          <input type="file" multiple onChange={(e) => setTeacherDocuments(Array.from(e.target.files ?? []))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-2.5 outline-none file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-white`} />
+                          {teacherDocuments.length > 0 ? (
+                            <p className={`mt-2 text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{teacherDocuments.length} file(s) selected</p>
+                          ) : null}
+                        </div>
+                        <div>
                           <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Password</label>
                           <div className="relative">
                             <input
@@ -720,7 +760,15 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                             ))}
                           </select>
                         </div>
-
+                        {createUserForm.role === 'TEACHER' ? (
+                          <>
+                            <div>
+                              <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Years of experience</label>
+                              <input type="number" min="0" value={createUserForm.yearsOfExperience} onChange={(e) => setCreateUserForm((c) => ({ ...c, yearsOfExperience: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                            </div>
+                            
+                          </>
+                        ) : null}
                         {createUserError ? <div className="md:col-span-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{createUserError}</div> : null}
                         {createUserSuccess ? <div className="md:col-span-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{createUserSuccess}</div> : null}
 
