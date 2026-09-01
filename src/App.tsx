@@ -71,6 +71,7 @@ const roleStats: Record<string, { label: string; value: string }[]> = {
 function App() {
   const [collegeId, setCollegeId] = useState('');
   const [password, setPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false); // NEW
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [user, setUser] = useState<User | null>(null);
@@ -97,11 +98,10 @@ function App() {
   id: '', username: '', collegeId: '', email: '', firstName: '', lastName: '', role: '', isActive: true,
 });
 const [editUserError, setEditUserError] = useState('');
-const [isEditingUser, setIsEditingUser] = useState(false);
+// const [isEditingUser, setIsEditingUser] = useState(false);
 const [isUpdatingUser, setIsUpdatingUser] = useState(false);
 const [viewUser, setViewUser] = useState<UserListItem | null>(null);
-  const [activePage, setActivePage] = useState<'overview' | 'users' | 'students' | 'teachers' | 'exam-cell' | 'fees' | 'profile'>('overview');
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+const [activePage, setActivePage] = useState<'overview' | 'users' | 'students' | 'teachers' | 'exam-cell' | 'fees' | 'profile' | 'edit-user' | 'view-user'>('overview');  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false); // NEW
   const [passwordForm, setPasswordForm] = useState({
@@ -272,7 +272,7 @@ const [viewUser, setViewUser] = useState<UserListItem | null>(null);
     firstName: item.firstName, lastName: item.lastName, role: item.role, isActive: item.isActive,
   });
   setEditUserError('');
-  setIsEditingUser(true);
+  // setIsEditingUser(true);
 };
 
 const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -286,7 +286,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
       firstName: editUserForm.firstName, lastName: editUserForm.lastName, role: editUserForm.role,
       isActive: editUserForm.isActive,
     }, { headers: { Authorization: `Bearer ${token}` } });
-    setIsEditingUser(false);
+    // setIsEditingUser(false);
     await fetchUsers();
   } catch (err) {
     const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to update user.' : 'Unable to update user.';
@@ -774,10 +774,10 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                                         </td>
                                         <td className="px-3 py-3 text-right">
                                           <div className="flex flex-wrap items-center justify-end gap-2">
-                                            <button type="button" onClick={() => setViewUser(item)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                            <button type="button" onClick={() => { setViewUser(item); setActivePage('view-user'); }} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                               View
                                             </button>
-                                            <button type="button" onClick={() => openEditUser(item)} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100">
+                                            <button type="button" onClick={() => { openEditUser(item); setActivePage('edit-user'); }} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100">
                                               Edit
                                             </button>
                                             {item.id !== user?.id ? (
@@ -799,94 +799,90 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                         </div>
                       )}
                     </div>
-                    {isEditingUser ? (
-                      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                        <div className={`${isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'} w-full max-w-lg rounded-2xl p-6 shadow-2xl`}>
-                          <div className="mb-4 flex items-center justify-between">
-                            <h3 className="text-xl font-semibold">Edit user</h3>
-                            <button type="button" onClick={() => setIsEditingUser(false)} className={isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}>
-                              <X className="h-5 w-5" />
-                            </button>
-                          </div>
-                          <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleUpdateUser}>
-                            <div>
-                              <label className="mb-2 block text-sm font-medium">Username</label>
-                              <input value={editUserForm.username} onChange={(e) => setEditUserForm((c) => ({ ...c, username: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
-                            </div>
-                            <div>
-                              <label className="mb-2 block text-sm font-medium">College ID</label>
-                              <input value={editUserForm.collegeId} onChange={(e) => setEditUserForm((c) => ({ ...c, collegeId: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
-                            </div>
-                            <div>
-                              <label className="mb-2 block text-sm font-medium">First name</label>
-                              <input value={editUserForm.firstName} onChange={(e) => setEditUserForm((c) => ({ ...c, firstName: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
-                            </div>
-                            <div>
-                              <label className="mb-2 block text-sm font-medium">Last name</label>
-                              <input value={editUserForm.lastName} onChange={(e) => setEditUserForm((c) => ({ ...c, lastName: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
-                            </div>
-                            <div className="sm:col-span-2">
-                              <label className="mb-2 block text-sm font-medium">Email</label>
-                              <input type="email" value={editUserForm.email} onChange={(e) => setEditUserForm((c) => ({ ...c, email: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
-                            </div>
-                            <div>
-                              <label className="mb-2 block text-sm font-medium">Role</label>
-                              <select value={editUserForm.role} onChange={(e) => setEditUserForm((c) => ({ ...c, role: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`}>
-                                {(user.role === 'SUPER_ADMIN' ? ['ADMIN', 'CHAIRMAN', 'EXAM_CELL', 'TEACHER', 'STUDENT'] : ['ADMIN', 'EXAM_CELL', 'TEACHER', 'STUDENT']).map((role) => (
-                                  <option key={role} value={role}>{role}</option>
-                                ))}
-                              </select>
-                            </div>
-                            <div>
-                              <label className="mb-2 block text-sm font-medium">Status</label>
-                              <select value={editUserForm.isActive ? 'active' : 'inactive'} onChange={(e) => setEditUserForm((c) => ({ ...c, isActive: e.target.value === 'active' }))} className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`}>
-                                <option value="active">Active</option>
-                                <option value="inactive">Inactive</option>
-                              </select>
-                            </div>
-
-                            {editUserError ? <div className="sm:col-span-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{editUserError}</div> : null}
-
-                            <div className="flex justify-end gap-3 sm:col-span-2">
-                              <button type="button" onClick={() => setIsEditingUser(false)} className={`${isDark ? 'border-slate-700 text-slate-200' : 'border-slate-200 text-slate-700'} rounded-xl border px-4 py-2.5 text-sm font-medium`}>
-                                Cancel
-                              </button>
-                              <button type="submit" disabled={isUpdatingUser} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70">
-                                {isUpdatingUser ? 'Saving...' : 'Save changes'}
-                              </button>
-                            </div>
-                          </form>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {viewUser ? (
-                      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                        <div className={`${isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'} w-full max-w-md rounded-2xl p-6 shadow-2xl`}>
-                          <div className="mb-4 flex items-center justify-between">
-                            <h3 className="text-xl font-semibold">User details</h3>
-                            <button type="button" onClick={() => setViewUser(null)} className={isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}>
-                              <X className="h-5 w-5" />
-                            </button>
-                          </div>
-                          <dl className="space-y-3 text-sm">
-                            <div className="flex justify-between"><dt className="text-slate-400">Name</dt><dd>{viewUser.firstName} {viewUser.lastName}</dd></div>
-                            <div className="flex justify-between"><dt className="text-slate-400">Username</dt><dd>{viewUser.username}</dd></div>
-                            <div className="flex justify-between"><dt className="text-slate-400">College ID</dt><dd>{viewUser.collegeId}</dd></div>
-                            <div className="flex justify-between"><dt className="text-slate-400">Email</dt><dd className="break-all">{viewUser.email}</dd></div>
-                            <div className="flex justify-between"><dt className="text-slate-400">Role</dt><dd>{viewUser.role}</dd></div>
-                            <div className="flex justify-between"><dt className="text-slate-400">Status</dt><dd>{viewUser.isActive ? 'Active' : 'Inactive'}</dd></div>
-                            <div className="flex justify-between"><dt className="text-slate-400">Created</dt><dd>{new Date(viewUser.createdAt).toLocaleString()}</dd></div>
-                          </dl>
-                          <div className="mt-6 flex justify-end">
-                            <button type="button" onClick={() => { setViewUser(null); openEditUser(viewUser); }} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white">
-                              Edit this user
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
                   </div>
+                  ) : activePage === 'edit-user' ? (
+                    <div className="space-y-6">
+                      <div className={`${isDark ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-white'} rounded-2xl border p-6 shadow-sm`}>
+                        <div className="mb-4 flex items-center justify-between gap-3">
+                          <div>
+                            <h3 className={`text-xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>Edit user</h3>
+                            <p className={`${isDark ? 'text-slate-400' : 'text-slate-500'} text-sm`}>Update this user's details.</p>
+                          </div>
+                          <button type="button" onClick={() => setActivePage('users')} className={`${isDark ? 'border-slate-700 text-slate-200' : 'border-slate-200 text-slate-700'} rounded-xl border px-4 py-2 text-sm font-medium`}>
+                            Back to Users
+                          </button>
+                        </div>
+
+                        <form className="grid gap-4 md:grid-cols-2" onSubmit={async (e) => { await handleUpdateUser(e); setActivePage('users'); }}>
+                          <div>
+                            <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Username</label>
+                            <input value={editUserForm.username} onChange={(e) => setEditUserForm((c) => ({ ...c, username: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                          </div>
+                          <div>
+                            <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>College ID</label>
+                            <input value={editUserForm.collegeId} onChange={(e) => setEditUserForm((c) => ({ ...c, collegeId: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                          </div>
+                          <div>
+                            <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>First name</label>
+                            <input value={editUserForm.firstName} onChange={(e) => setEditUserForm((c) => ({ ...c, firstName: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                          </div>
+                          <div>
+                            <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Last name</label>
+                            <input value={editUserForm.lastName} onChange={(e) => setEditUserForm((c) => ({ ...c, lastName: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Email</label>
+                            <input type="email" value={editUserForm.email} onChange={(e) => setEditUserForm((c) => ({ ...c, email: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                          </div>
+                          <div>
+                            <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Role</label>
+                            <select value={editUserForm.role} onChange={(e) => setEditUserForm((c) => ({ ...c, role: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                              {(user.role === 'SUPER_ADMIN' ? ['ADMIN', 'CHAIRMAN', 'EXAM_CELL', 'TEACHER', 'STUDENT'] : ['ADMIN', 'EXAM_CELL', 'TEACHER', 'STUDENT']).map((role) => (
+                                <option key={role} value={role}>{role}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Status</label>
+                            <select value={editUserForm.isActive ? 'active' : 'inactive'} onChange={(e) => setEditUserForm((c) => ({ ...c, isActive: e.target.value === 'active' }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                              <option value="active">Active</option>
+                              <option value="inactive">Inactive</option>
+                            </select>
+                          </div>
+
+                          {editUserError ? <div className="md:col-span-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{editUserError}</div> : null}
+
+                          <div className="flex justify-end gap-3 md:col-span-2">
+                            <button type="button" onClick={() => setActivePage('users')} className={`${isDark ? 'border-slate-700 text-slate-200' : 'border-slate-200 text-slate-700'} rounded-xl border px-4 py-2.5 text-sm font-medium`}>
+                              Cancel
+                            </button>
+                            <button type="submit" disabled={isUpdatingUser} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70">
+                              {isUpdatingUser ? 'Saving...' : 'Save changes'}
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    </div>
+                  ) : activePage === 'view-user' && viewUser ? (
+                    <div className="space-y-6">
+                      <div className={`${isDark ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-white'} rounded-2xl border p-6 shadow-sm`}>
+                        <div className="mb-6 flex items-center justify-between gap-3">
+                          <h3 className={`text-xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>User details</h3>
+                          <button type="button" onClick={() => setActivePage('users')} className={`${isDark ? 'border-slate-700 text-slate-200' : 'border-slate-200 text-slate-700'} rounded-xl border px-4 py-2 text-sm font-medium`}>
+                            Back to Users
+                          </button>
+                        </div>
+                        <dl className="grid gap-4 sm:grid-cols-2">
+                          <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Name</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.firstName} {viewUser.lastName}</dd></div>
+                          <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Username</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.username}</dd></div>
+                          <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>College ID</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.collegeId}</dd></div>
+                          <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Email</dt><dd className={`mt-1 break-all text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.email}</dd></div>
+                          <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Role</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.role}</dd></div>
+                          <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Status</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.isActive ? 'Active' : 'Inactive'}</dd></div>
+                          <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Created</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{new Date(viewUser.createdAt).toLocaleString()}</dd></div>
+                        </dl>
+                      </div>
+                    </div>
                 ) : activePage === 'profile' ? (
                   <div className="space-y-6">
                     <div className={`${isDark ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-slate-50'} rounded-2xl border p-6`}>
@@ -1240,19 +1236,28 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                     placeholder="Ex: FAU-1001"
                   />
                 </div>
-
                 <div>
                   <label htmlFor="password" className="mb-2 block text-sm font-medium text-slate-700">
                     Password
                   </label>
-                  <input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 outline-none transition focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10"
-                    placeholder="••••••••"
-                  />
+                  <div className="relative">
+                    <input
+                      id="password"
+                      type={showLoginPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 pr-11 outline-none transition focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10"
+                      placeholder="••••••••"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPassword((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showLoginPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between text-sm">
