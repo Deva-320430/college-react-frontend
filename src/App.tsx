@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { ArrowRight, BookOpen, Eye, EyeOff, GraduationCap, Landmark, ShieldCheck, UserCircle } from 'lucide-react';
+import { ArrowRight, BookOpen, Eye, EyeOff, GraduationCap, Landmark, Menu, ShieldCheck, UserCircle, X } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -69,8 +69,8 @@ const roleStats: Record<string, { label: string; value: string }[]> = {
 };
 
 function App() {
-  const [collegeId, setCollegeId] = useState('superadmin');
-  const [password, setPassword] = useState('Password@123');
+  const [collegeId, setCollegeId] = useState('');
+  const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [user, setUser] = useState<User | null>(null);
@@ -83,8 +83,8 @@ function App() {
     email: '',
     firstName: '',
     lastName: '',
-    password: 'Password@123',
-    role: 'TEACHER',
+    password: '',
+    role: '',
   });
   const [createUserError, setCreateUserError] = useState('');
   const [createUserSuccess, setCreateUserSuccess] = useState('');
@@ -93,9 +93,17 @@ function App() {
   const [deleteError, setDeleteError] = useState('');
   const [deleteSuccess, setDeleteSuccess] = useState('');
   const [isDeletingUser, setIsDeletingUser] = useState<string | null>(null);
+  const [editUserForm, setEditUserForm] = useState({
+  id: '', username: '', collegeId: '', email: '', firstName: '', lastName: '', role: '', isActive: true,
+});
+const [editUserError, setEditUserError] = useState('');
+const [isEditingUser, setIsEditingUser] = useState(false);
+const [isUpdatingUser, setIsUpdatingUser] = useState(false);
+const [viewUser, setViewUser] = useState<UserListItem | null>(null);
   const [activePage, setActivePage] = useState<'overview' | 'users' | 'students' | 'teachers' | 'exam-cell' | 'fees' | 'profile'>('overview');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [quickActionsOpen, setQuickActionsOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false); // NEW
   const [passwordForm, setPasswordForm] = useState({
     oldPassword: '',
     newPassword: '',
@@ -214,7 +222,7 @@ function App() {
         email: '',
         firstName: '',
         lastName: '',
-        password: 'Password@123',
+        password: '',
         role: user?.role === 'SUPER_ADMIN' ? 'ADMIN' : 'TEACHER',
       });
       await fetchUsers();
@@ -257,6 +265,36 @@ function App() {
       setIsDeletingUser(null);
     }
   };
+
+  const openEditUser = (item: UserListItem) => {
+  setEditUserForm({
+    id: item.id, username: item.username, collegeId: item.collegeId, email: item.email,
+    firstName: item.firstName, lastName: item.lastName, role: item.role, isActive: item.isActive,
+  });
+  setEditUserError('');
+  setIsEditingUser(true);
+};
+
+const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
+  event.preventDefault();
+  setEditUserError('');
+  setIsUpdatingUser(true);
+  try {
+    const token = localStorage.getItem('collegePortalToken');
+    await axios.patch(`${API_URL}/api/auth/users/${editUserForm.id}`, {
+      username: editUserForm.username, collegeId: editUserForm.collegeId, email: editUserForm.email,
+      firstName: editUserForm.firstName, lastName: editUserForm.lastName, role: editUserForm.role,
+      isActive: editUserForm.isActive,
+    }, { headers: { Authorization: `Bearer ${token}` } });
+    setIsEditingUser(false);
+    await fetchUsers();
+  } catch (err) {
+    const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to update user.' : 'Unable to update user.';
+    setEditUserError(message);
+  } finally {
+    setIsUpdatingUser(false);
+  }
+};
 
   const togglePasswordVisibility = (field: 'oldPassword' | 'newPassword' | 'confirmPassword') => {
     setShowPasswords((current) => ({
@@ -420,15 +458,28 @@ function App() {
       <div className={isDark ? 'dark' : ''}>
         <div className={`min-h-screen ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-900'} p-4 lg:p-6`}>
           <div className="mx-auto flex max-w-7xl gap-6">
-            <aside className={`${isDark ? 'bg-slate-900 text-white border-slate-800' : 'bg-white text-slate-900 border-slate-200'} hidden w-72 shrink-0 rounded-3xl border p-5 shadow-2xl lg:block`}>
-              <div className="mb-8 flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300 to-amber-500 text-slate-900">
-                  <GraduationCap className="h-6 w-6" />
+            {mobileNavOpen ? (
+              <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setMobileNavOpen(false)} />
+            ) : null}
+
+            <aside
+              className={`${isDark ? 'bg-slate-900 text-white border-slate-800' : 'bg-white text-slate-900 border-slate-200'} fixed inset-y-0 left-0 z-50 w-72 overflow-y-auto border-r p-5 shadow-2xl transition-transform duration-300 lg:static lg:z-auto lg:block lg:w-72 lg:shrink-0 lg:translate-x-0 lg:rounded-3xl lg:border lg:shadow-2xl ${
+                mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
+              }`}
+            >
+              <div className="mb-8 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300 to-amber-500 text-slate-900">
+                    <GraduationCap className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.28em] text-slate-400">Campus</p>
+                    <h2 className="text-lg font-semibold">Northbridge</h2>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.28em] text-slate-400">Campus</p>
-                  <h2 className="text-lg font-semibold">Northbridge</h2>
-                </div>
+                <button type="button" onClick={() => setMobileNavOpen(false)} className={`${isDark ? 'text-slate-300 hover:text-white' : 'text-slate-500 hover:text-slate-900'} lg:hidden`} aria-label="Close menu">
+                  <X className="h-6 w-6" />
+                </button>
               </div>
 
               <nav className="space-y-2">
@@ -439,15 +490,12 @@ function App() {
                     onClick={() => {
                       setActivePage(item.id as 'overview' | 'users' | 'students' | 'teachers' | 'exam-cell' | 'fees' | 'profile');
                       setQuickActionsOpen(false);
+                      setMobileNavOpen(false); // NEW: close drawer after picking a page
                     }}
                     className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${
                       activePage === item.id
-                        ? isDark
-                          ? 'bg-slate-800 text-white shadow-lg'
-                          : 'bg-slate-900 text-white shadow-lg'
-                        : isDark
-                          ? 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                        ? isDark ? 'bg-slate-800 text-white shadow-lg' : 'bg-slate-900 text-white shadow-lg'
+                        : isDark ? 'text-slate-300 hover:bg-slate-800 hover:text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                     }`}
                   >
                     <span>{item.label}</span>
@@ -467,9 +515,19 @@ function App() {
 
             <div className={`${isDark ? 'border-slate-800 bg-slate-900 shadow-2xl' : 'border-slate-200 bg-white shadow-xl'} flex-1 rounded-3xl border`}>
               <header className={`${isDark ? 'border-slate-800 bg-slate-950/70' : 'border-slate-200 bg-slate-50'} flex flex-col gap-4 border-b px-6 py-5 md:flex-row md:items-center md:justify-between`}>
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-[0.25em] text-secondary">Portal overview</p>
-                  <h1 className={`mt-2 text-3xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>{title}</h1>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setMobileNavOpen(true)}
+                    className={`${isDark ? 'border-slate-700 bg-slate-900 text-slate-200' : 'border-slate-200 bg-white text-slate-700'} rounded-xl border p-2 lg:hidden`}
+                    aria-label="Open menu"
+                  >
+                    <Menu className="h-5 w-5" />
+                  </button>
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-[0.25em] text-secondary">Portal overview</p>
+                    <h1 className={`mt-1 text-2xl font-semibold sm:mt-2 sm:text-3xl ${isDark ? 'text-white' : 'text-slate-900'}`}>{title}</h1>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -640,6 +698,7 @@ function App() {
                             <input
                               type={showCreatePassword ? 'text' : 'password'}
                               value={createUserForm.password}
+                              placeholder="Set a password"
                               onChange={(e) => setCreateUserForm((current) => ({ ...current, password: e.target.value }))}
                               className={`${isDark ? 'border-slate-700 bg-slate-900 text-white pr-11' : 'border-slate-200 bg-slate-50 text-slate-900 pr-11'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}
                             />
@@ -714,13 +773,21 @@ function App() {
                                           </span>
                                         </td>
                                         <td className="px-3 py-3 text-right">
-                                          {item.id !== user?.id ? (
-                                            <button type="button" onClick={() => handleDeleteUser(item.id)} disabled={isDeletingUser === item.id} className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60">
-                                              {isDeletingUser === item.id ? 'Deleting...' : 'Delete'}
+                                          <div className="flex flex-wrap items-center justify-end gap-2">
+                                            <button type="button" onClick={() => setViewUser(item)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                              View
                                             </button>
-                                          ) : (
-                                            <span className={isDark ? 'text-xs text-slate-500' : 'text-xs text-slate-400'}>Self</span>
-                                          )}
+                                            <button type="button" onClick={() => openEditUser(item)} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100">
+                                              Edit
+                                            </button>
+                                            {item.id !== user?.id ? (
+                                              <button type="button" onClick={() => handleDeleteUser(item.id)} disabled={isDeletingUser === item.id} className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60">
+                                                {isDeletingUser === item.id ? 'Deleting...' : 'Delete'}
+                                              </button>
+                                            ) : (
+                                              <span className={isDark ? 'text-xs text-slate-500' : 'text-xs text-slate-400'}>Self</span>
+                                            )}
+                                          </div>
                                         </td>
                                       </tr>
                                     ))}
@@ -732,6 +799,93 @@ function App() {
                         </div>
                       )}
                     </div>
+                    {isEditingUser ? (
+                      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                        <div className={`${isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'} w-full max-w-lg rounded-2xl p-6 shadow-2xl`}>
+                          <div className="mb-4 flex items-center justify-between">
+                            <h3 className="text-xl font-semibold">Edit user</h3>
+                            <button type="button" onClick={() => setIsEditingUser(false)} className={isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}>
+                              <X className="h-5 w-5" />
+                            </button>
+                          </div>
+                          <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleUpdateUser}>
+                            <div>
+                              <label className="mb-2 block text-sm font-medium">Username</label>
+                              <input value={editUserForm.username} onChange={(e) => setEditUserForm((c) => ({ ...c, username: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
+                            </div>
+                            <div>
+                              <label className="mb-2 block text-sm font-medium">College ID</label>
+                              <input value={editUserForm.collegeId} onChange={(e) => setEditUserForm((c) => ({ ...c, collegeId: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
+                            </div>
+                            <div>
+                              <label className="mb-2 block text-sm font-medium">First name</label>
+                              <input value={editUserForm.firstName} onChange={(e) => setEditUserForm((c) => ({ ...c, firstName: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
+                            </div>
+                            <div>
+                              <label className="mb-2 block text-sm font-medium">Last name</label>
+                              <input value={editUserForm.lastName} onChange={(e) => setEditUserForm((c) => ({ ...c, lastName: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <label className="mb-2 block text-sm font-medium">Email</label>
+                              <input type="email" value={editUserForm.email} onChange={(e) => setEditUserForm((c) => ({ ...c, email: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
+                            </div>
+                            <div>
+                              <label className="mb-2 block text-sm font-medium">Role</label>
+                              <select value={editUserForm.role} onChange={(e) => setEditUserForm((c) => ({ ...c, role: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`}>
+                                {(user.role === 'SUPER_ADMIN' ? ['ADMIN', 'CHAIRMAN', 'EXAM_CELL', 'TEACHER', 'STUDENT'] : ['ADMIN', 'EXAM_CELL', 'TEACHER', 'STUDENT']).map((role) => (
+                                  <option key={role} value={role}>{role}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="mb-2 block text-sm font-medium">Status</label>
+                              <select value={editUserForm.isActive ? 'active' : 'inactive'} onChange={(e) => setEditUserForm((c) => ({ ...c, isActive: e.target.value === 'active' }))} className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`}>
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                              </select>
+                            </div>
+
+                            {editUserError ? <div className="sm:col-span-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{editUserError}</div> : null}
+
+                            <div className="flex justify-end gap-3 sm:col-span-2">
+                              <button type="button" onClick={() => setIsEditingUser(false)} className={`${isDark ? 'border-slate-700 text-slate-200' : 'border-slate-200 text-slate-700'} rounded-xl border px-4 py-2.5 text-sm font-medium`}>
+                                Cancel
+                              </button>
+                              <button type="submit" disabled={isUpdatingUser} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70">
+                                {isUpdatingUser ? 'Saving...' : 'Save changes'}
+                              </button>
+                            </div>
+                          </form>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {viewUser ? (
+                      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                        <div className={`${isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'} w-full max-w-md rounded-2xl p-6 shadow-2xl`}>
+                          <div className="mb-4 flex items-center justify-between">
+                            <h3 className="text-xl font-semibold">User details</h3>
+                            <button type="button" onClick={() => setViewUser(null)} className={isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}>
+                              <X className="h-5 w-5" />
+                            </button>
+                          </div>
+                          <dl className="space-y-3 text-sm">
+                            <div className="flex justify-between"><dt className="text-slate-400">Name</dt><dd>{viewUser.firstName} {viewUser.lastName}</dd></div>
+                            <div className="flex justify-between"><dt className="text-slate-400">Username</dt><dd>{viewUser.username}</dd></div>
+                            <div className="flex justify-between"><dt className="text-slate-400">College ID</dt><dd>{viewUser.collegeId}</dd></div>
+                            <div className="flex justify-between"><dt className="text-slate-400">Email</dt><dd className="break-all">{viewUser.email}</dd></div>
+                            <div className="flex justify-between"><dt className="text-slate-400">Role</dt><dd>{viewUser.role}</dd></div>
+                            <div className="flex justify-between"><dt className="text-slate-400">Status</dt><dd>{viewUser.isActive ? 'Active' : 'Inactive'}</dd></div>
+                            <div className="flex justify-between"><dt className="text-slate-400">Created</dt><dd>{new Date(viewUser.createdAt).toLocaleString()}</dd></div>
+                          </dl>
+                          <div className="mt-6 flex justify-end">
+                            <button type="button" onClick={() => { setViewUser(null); openEditUser(viewUser); }} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white">
+                              Edit this user
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ) : activePage === 'profile' ? (
                   <div className="space-y-6">
@@ -1083,7 +1237,7 @@ function App() {
                     value={collegeId}
                     onChange={(e) => setCollegeId(e.target.value)}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 outline-none transition focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10"
-                    placeholder="superadmin"
+                    placeholder="Ex: FAU-1001"
                   />
                 </div>
 
