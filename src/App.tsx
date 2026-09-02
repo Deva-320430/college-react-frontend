@@ -30,8 +30,13 @@ type UserListItem = {
   joiningDate: string | null;
   profilePhoto: string | null;
   documentUrls: string[];
+  address: string | null;      // NEW
+  salary: number | null;       // NEW
+  department: string | null;   // NEW
   yearsOfExperience: number | null;
 };
+
+type DepartmentOption = { id: string; name: string; code: string }; // NEW
 
 const roleTitles: Record<string, string> = {
   SUPER_ADMIN: 'Super Admin Dashboard',
@@ -98,6 +103,7 @@ function App() {
   username: '', collegeId: '', email: '', firstName: '', lastName: '', password: '',
   role: user?.role === 'SUPER_ADMIN' ? 'ADMIN' : '',
   dob: '', joiningDate: '', yearsOfExperience: '', phoneNumber: '', // NEW
+  address: '', salary: '', departmentId: '', // NEW
   });
   const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null); // NEW
   const [teacherDocuments, setTeacherDocuments] = useState<File[]>([]);        // NEW
@@ -143,6 +149,17 @@ const [activePage, setActivePage] = useState<'overview' | 'users' | 'students' |
       }
     }
   }, []);
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]); // NEW
+
+  useEffect(() => {
+  if (user && (user.role === 'SUPER_ADMIN' || user.role === 'CHAIRMAN')) {
+    const token = localStorage.getItem('collegePortalToken');
+    axios
+      .get(`${API_URL}/api/auth/departments`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => setDepartments(res.data.departments || []))
+      .catch(() => setDepartments([]));
+  }
+}, [user]);
 
   useEffect(() => {
     if (user && (user.role === 'SUPER_ADMIN' || user.role === 'CHAIRMAN')) {
@@ -224,10 +241,9 @@ const [activePage, setActivePage] = useState<'overview' | 'users' | 'students' |
       Object.entries(createUserForm).forEach(([key, value]) => {
         if (value) formData.append(key, value as string);
       });
-      if (createUserForm.role === 'TEACHER') {
-        if (profilePhotoFile) formData.append('profilePhoto', profilePhotoFile);
-        teacherDocuments.forEach((file) => formData.append('documents', file));
-      }
+      
+      if (profilePhotoFile) formData.append('profilePhoto', profilePhotoFile);
+      teacherDocuments.forEach((file) => formData.append('documents', file));
 
       const response = await axios.post(
         `${API_URL}/api/auth/register`,
@@ -248,6 +264,9 @@ const [activePage, setActivePage] = useState<'overview' | 'users' | 'students' |
         joiningDate: '',
         yearsOfExperience: '',
         phoneNumber: '',
+        address: '',
+        salary: '',
+        departmentId: '',
       });
       await fetchUsers();
     } catch (err) {
@@ -716,6 +735,10 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Email</label>
                           <input type="email" value={createUserForm.email} onChange={(e) => setCreateUserForm((current) => ({ ...current, email: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
                         </div>
+                        <div className="md:col-span-2">
+                          <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Address</label>
+                          <input value={createUserForm.address} onChange={(e) => setCreateUserForm((c) => ({ ...c, address: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                        </div>
                         <div>
                           <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Profile picture</label>
                           <input type="file" accept="image/*" onChange={(e) => setProfilePhotoFile(e.target.files?.[0] ?? null)} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-2.5 outline-none file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-white`} />
@@ -762,18 +785,30 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                         <div>
                           <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Role</label>
                           <select value={createUserForm.role} onChange={(e) => setCreateUserForm((current) => ({ ...current, role: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
-                            {(user.role === 'SUPER_ADMIN' ? ['ADMIN', 'CHAIRMAN', 'EXAM_CELL', 'TEACHER', 'STUDENT'] : ['ADMIN', 'EXAM_CELL', 'TEACHER', 'STUDENT']).map((role) => (
+                            {(user.role === 'SUPER_ADMIN' ? ['Select a Role', 'ADMIN', 'CHAIRMAN', 'EXAM_CELL', 'TEACHER', 'STUDENT'] : ['Select a Role','ADMIN', 'EXAM_CELL', 'TEACHER', 'STUDENT']).map((role) => (
                               <option key={role} value={role}>{role}</option>
                             ))}
                           </select>
                         </div>
-                        {createUserForm.role === 'TEACHER' ? (
+                        {['TEACHER', 'EXAM_CELL', 'ADMIN'].includes(createUserForm.role) ? (
                           <>
+                            <div>
+                              <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Department</label>
+                              <select value={createUserForm.departmentId} onChange={(e) => setCreateUserForm((c) => ({ ...c, departmentId: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                                <option value="">Select department</option>
+                                {departments.map((dept) => (
+                                  <option key={dept.id} value={dept.id}>{dept.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Salary</label>
+                              <input type="number" min="0" step="0.01" value={createUserForm.salary} onChange={(e) => setCreateUserForm((c) => ({ ...c, salary: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                            </div>
                             <div>
                               <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Years of experience</label>
                               <input type="number" min="0" value={createUserForm.yearsOfExperience} onChange={(e) => setCreateUserForm((c) => ({ ...c, yearsOfExperience: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
                             </div>
-                            
                           </>
                         ) : null}
                         {createUserError ? <div className="md:col-span-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{createUserError}</div> : null}
@@ -892,7 +927,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           <div>
                             <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Role</label>
                             <select value={editUserForm.role} onChange={(e) => setEditUserForm((c) => ({ ...c, role: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
-                              {(user.role === 'SUPER_ADMIN' ? ['ADMIN', 'CHAIRMAN', 'EXAM_CELL', 'TEACHER', 'STUDENT'] : ['ADMIN', 'EXAM_CELL', 'TEACHER', 'STUDENT']).map((role) => (
+                              {(user.role === 'SUPER_ADMIN' ? ['Select a Role', 'ADMIN', 'CHAIRMAN', 'EXAM_CELL', 'TEACHER', 'STUDENT'] : ['Select a Role', 'ADMIN', 'EXAM_CELL', 'TEACHER', 'STUDENT']).map((role) => (
                                 <option key={role} value={role}>{role}</option>
                               ))}
                             </select>
@@ -954,6 +989,13 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Joining date</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.joiningDate ? new Date(viewUser.joiningDate).toLocaleDateString() : '—'}</dd></div>
                           {viewUser.role === 'TEACHER' ? (
                             <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Years of experience</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.yearsOfExperience ?? '—'}</dd></div>
+                          ) : null}
+                          <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Address</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.address || '—'}</dd></div>
+                          {['TEACHER', 'EXAM_CELL', 'ADMIN'].includes(viewUser.role) ? (
+                            <>
+                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Department</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.department || '—'}</dd></div>
+                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Salary</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.salary != null ? `$${viewUser.salary.toLocaleString()}` : '—'}</dd></div>
+                            </>
                           ) : null}
                         </dl>
                         {viewUser.documentUrls.length > 0 ? (
