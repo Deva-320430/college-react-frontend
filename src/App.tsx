@@ -14,6 +14,7 @@ type User = {
   role: string;
 };
 
+// after
 type UserListItem = {
   id: string;
   collegeId: string;
@@ -24,6 +25,12 @@ type UserListItem = {
   role: string;
   isActive: boolean;
   createdAt: string;
+  phoneNumber: string | null;
+  dob: string | null;
+  joiningDate: string | null;
+  profilePhoto: string | null;
+  documentUrls: string[];
+  yearsOfExperience: number | null;
 };
 
 const roleTitles: Record<string, string> = {
@@ -89,7 +96,7 @@ function App() {
   // });
   const [createUserForm, setCreateUserForm] = useState({
   username: '', collegeId: '', email: '', firstName: '', lastName: '', password: '',
-  role: user?.role === 'SUPER_ADMIN' ? 'ADMIN' : 'TEACHER',
+  role: user?.role === 'SUPER_ADMIN' ? 'ADMIN' : '',
   dob: '', joiningDate: '', yearsOfExperience: '', phoneNumber: '', // NEW
   });
   const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null); // NEW
@@ -661,17 +668,17 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                       </div>
 
                       <div className="mt-6 grid gap-4 md:grid-cols-3">
-                        <div className="rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/10 p-4">
-                          <div className="text-sm text-slate-400">Students</div>
-                          <div className="mt-2 text-2xl font-semibold text-white">12K+</div>
+                        <div className={`${isDark ? 'from-cyan-500/20 to-blue-500/10' : 'from-cyan-500/50 to-blue-500/40' } rounded-2xl bg-gradient-to-br p-4`}>
+                          <div className={`${isDark ? 'text-white' : 'text-slate-900'} text-sm text-scale-400`}>Students</div>
+                          <div className={`${isDark ? 'text-white':'text-slate-900'} mt-2 text-2xl font-semibold`}>12K+</div>
                         </div>
-                        <div className="rounded-2xl bg-gradient-to-br from-violet-500/20 to-purple-500/10 p-4">
-                          <div className="text-sm text-slate-400">Faculty</div>
-                          <div className="mt-2 text-2xl font-semibold text-white">480</div>
+                        <div className={`${isDark ? 'from-violet-500/20 to-purple-500/10' : 'from-violet-500/40 to-purple-500/30' } rounded-2xl bg-gradient-to-br p-4`}>
+                          <div className={`${isDark ? 'text-white' : 'text-slate-900'} text-sm text-scale-400`}>Faculty</div>
+                          <div className={`${isDark ? 'text-white':'text-slate-900'} mt-2 text-2xl font-semibold`}>480</div>
                         </div>
-                        <div className="rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/10 p-4">
-                          <div className="text-sm text-slate-400">Success Rate</div>
-                          <div className="mt-2 text-2xl font-semibold text-white">96.7%</div>
+                        <div className={`${isDark ? 'from-emerald-500/20 to-teal-500/10' : 'from-emerald-500/40 to-teal-500/30' } rounded-2xl bg-gradient-to-br p-4`}>
+                          <div className={`${isDark ? 'text-white' : 'text-slate-900'} text-sm text-scale-400`}>Success Rate</div>
+                          <div className={`${isDark ? 'text-white':'text-slate-900'} mt-2 text-2xl font-semibold`}>96.7%</div>
                         </div>
                       </div>
                     </div>
@@ -920,6 +927,20 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                             Back to Users
                           </button>
                         </div>
+                        {viewUser.profilePhoto ? (
+                          <div className={`${isDark ? 'border-slate-800' : 'border-slate-200'} mb-6 border-b pb-6`}>
+                            <dt className={`mb-2 text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Profile picture</dt>
+                            <img
+                              src={`${API_URL}${viewUser.profilePhoto}`}
+                              alt={`${viewUser.firstName} ${viewUser.lastName}`}
+                              className="h-24 w-24 rounded-full border border-slate-700 object-cover"
+                              onError={(e) => {
+                                e.currentTarget.onerror = null;
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          </div>
+                        ) : null}
                         <dl className="grid gap-4 sm:grid-cols-2">
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Name</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.firstName} {viewUser.lastName}</dd></div>
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Username</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.username}</dd></div>
@@ -928,7 +949,31 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Role</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.role}</dd></div>
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Status</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.isActive ? 'Active' : 'Inactive'}</dd></div>
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Created</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{new Date(viewUser.createdAt).toLocaleString()}</dd></div>
+                          <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Phone number</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.phoneNumber || '—'}</dd></div>
+                          <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Date of birth</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.dob ? new Date(viewUser.dob).toLocaleDateString() : '—'}</dd></div>
+                          <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Joining date</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.joiningDate ? new Date(viewUser.joiningDate).toLocaleDateString() : '—'}</dd></div>
+                          {viewUser.role === 'TEACHER' ? (
+                            <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Years of experience</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.yearsOfExperience ?? '—'}</dd></div>
+                          ) : null}
                         </dl>
+                        {viewUser.documentUrls.length > 0 ? (
+                          <div className={`${isDark ? 'border-slate-800' : 'border-slate-200'} mt-6 border-t pt-6`}>
+                            <dt className={`mb-2 text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Documents</dt>
+                            <div className="flex flex-wrap gap-2">
+                              {viewUser.documentUrls.map((docUrl, index) => (
+                                <a
+                                  key={docUrl}
+                                  href={`${API_URL}${docUrl}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={`${isDark ? 'border-slate-700 text-slate-200 hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-50'} rounded-lg border px-3 py-1.5 text-xs font-medium`}
+                                >
+                                  Document {index + 1}
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                 ) : activePage === 'profile' ? (
