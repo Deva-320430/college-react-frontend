@@ -101,12 +101,13 @@ function App() {
   // });
   const [createUserForm, setCreateUserForm] = useState({
   username: '', collegeId: '', email: '', firstName: '', lastName: '', password: '',
-  role: user?.role === 'SUPER_ADMIN' ? 'ADMIN' : '',
+  role: user?.role === 'SUPER_ADMIN' ? 'ADMIN' : 'Select a Role',
   dob: '', joiningDate: '', yearsOfExperience: '', phoneNumber: '', // NEW
   address: '', salary: '', departmentId: '', // NEW
   });
   const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null); // NEW
   const [teacherDocuments, setTeacherDocuments] = useState<File[]>([]);        // NEW
+  const [fileInputResetKey, setFileInputResetKey] = useState(0); // NEW
   const [createUserError, setCreateUserError] = useState('');
   const [createUserSuccess, setCreateUserSuccess] = useState('');
   const [isCreatingUser, setIsCreatingUser] = useState(false);
@@ -259,7 +260,7 @@ const [activePage, setActivePage] = useState<'overview' | 'users' | 'students' |
         firstName: '',
         lastName: '',
         password: '',
-        role: user?.role === 'SUPER_ADMIN' ? 'ADMIN' : 'TEACHER',
+        role: user?.role === 'SUPER_ADMIN' ? 'ADMIN' : 'Select a Role',
         dob: '',
         joiningDate: '',
         yearsOfExperience: '',
@@ -268,6 +269,9 @@ const [activePage, setActivePage] = useState<'overview' | 'users' | 'students' |
         salary: '',
         departmentId: '',
       });
+      setProfilePhotoFile(null);       // NEW
+      setTeacherDocuments([]);         // NEW
+      setFileInputResetKey((k) => k + 1); // NEW — forces the file inputs to remount and clear
       await fetchUsers();
     } catch (err) {
       const message = axios.isAxiosError(err)
@@ -309,10 +313,16 @@ const [activePage, setActivePage] = useState<'overview' | 'users' | 'students' |
     }
   };
 
+  const removeDocument = (indexToRemove: number) => {
+    setTeacherDocuments((current) => current.filter((_, index) => index !== indexToRemove));
+  };
+
   const openEditUser = (item: UserListItem) => {
   setEditUserForm({
     id: item.id, username: item.username, collegeId: item.collegeId, email: item.email,
     firstName: item.firstName, lastName: item.lastName, role: item.role, isActive: item.isActive,
+    // dob: item.dob, joiningDate: item.joiningDate, yearsOfExperience: item.yearsOfExperience,
+    // phoneNumber: item.phoneNumber, address: item.address, salary: item.salary, departmentId: item.departmentId,
   });
   setEditUserError('');
   // setIsEditingUser(true);
@@ -741,7 +751,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                         </div>
                         <div>
                           <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Profile picture</label>
-                          <input type="file" accept="image/*" onChange={(e) => setProfilePhotoFile(e.target.files?.[0] ?? null)} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-2.5 outline-none file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-white`} />
+                          <input key={fileInputResetKey} type="file" accept="image/*" onChange={(e) => setProfilePhotoFile(e.target.files?.[0] ?? null)} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-2.5 outline-none file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-white`} />
                         </div>
                         <div>
                           <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Phone number</label>
@@ -757,10 +767,27 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                         </div>
                         <div className="md:col-span-2">
                           <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Upload documents</label>
-                          <input type="file" multiple onChange={(e) => setTeacherDocuments(Array.from(e.target.files ?? []))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-2.5 outline-none file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-white`} />
                           {teacherDocuments.length > 0 ? (
-                            <p className={`mt-2 text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{teacherDocuments.length} file(s) selected</p>
+                            <ul className="mt-2 space-y-1.5 mb-2">
+                              {teacherDocuments.map((file, index) => (
+                                <li
+                                  key={`${file.name}-${file.lastModified}-${index}`}
+                                  className={`flex items-center justify-between rounded-lg border px-3 py-1.5 text-xs ${isDark ? 'border-slate-700 bg-slate-900 text-slate-200' : 'border-slate-200 bg-slate-50 text-slate-700'}`}
+                                >
+                                  <span className="truncate pr-2">{file.name}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeDocument(index)}
+                                    className="shrink-0 text-red-500 hover:text-red-600"
+                                    aria-label={`Remove ${file.name}`}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
                           ) : null}
+                          <input key={fileInputResetKey} type="file" multiple onChange={(e) => setTeacherDocuments(Array.from(e.target.files ?? []))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-2.5 outline-none file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-white`} />
                         </div>
                         <div>
                           <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Password</label>
@@ -794,7 +821,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           <>
                             <div>
                               <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Department</label>
-                              <select value={createUserForm.departmentId} onChange={(e) => setCreateUserForm((c) => ({ ...c, departmentId: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                              <select required value={createUserForm.departmentId} onChange={(e) => setCreateUserForm((c) => ({ ...c, departmentId: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
                                 <option value="">Select department</option>
                                 {departments.map((dept) => (
                                   <option key={dept.id} value={dept.id}>{dept.name}</option>
@@ -803,11 +830,11 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                             </div>
                             <div>
                               <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Salary</label>
-                              <input type="number" min="0" step="0.01" value={createUserForm.salary} onChange={(e) => setCreateUserForm((c) => ({ ...c, salary: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                              <input required type="number" min="0" step="0.01" value={createUserForm.salary} onChange={(e) => setCreateUserForm((c) => ({ ...c, salary: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
                             </div>
                             <div>
                               <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Years of experience</label>
-                              <input type="number" min="0" value={createUserForm.yearsOfExperience} onChange={(e) => setCreateUserForm((c) => ({ ...c, yearsOfExperience: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                              <input required type="number" min="0" value={createUserForm.yearsOfExperience} onChange={(e) => setCreateUserForm((c) => ({ ...c, yearsOfExperience: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
                             </div>
                           </>
                         ) : null}
@@ -987,12 +1014,10 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Phone number</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.phoneNumber || '—'}</dd></div>
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Date of birth</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.dob ? new Date(viewUser.dob).toLocaleDateString() : '—'}</dd></div>
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Joining date</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.joiningDate ? new Date(viewUser.joiningDate).toLocaleDateString() : '—'}</dd></div>
-                          {viewUser.role === 'TEACHER' ? (
-                            <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Years of experience</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.yearsOfExperience ?? '—'}</dd></div>
-                          ) : null}
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Address</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.address || '—'}</dd></div>
                           {['TEACHER', 'EXAM_CELL', 'ADMIN'].includes(viewUser.role) ? (
                             <>
+                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Years of experience</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.yearsOfExperience ?? '—'}</dd></div>
                               <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Department</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.department || '—'}</dd></div>
                               <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Salary</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.salary != null ? `$${viewUser.salary.toLocaleString()}` : '—'}</dd></div>
                             </>
