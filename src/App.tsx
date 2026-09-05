@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { ArrowRight, BookOpen, Eye, EyeOff, GraduationCap, Landmark, Menu, ShieldCheck, UserCircle, X } from 'lucide-react';
+import { ArrowRight, BookOpen, ChevronDown, ChevronUp, Eye, EyeOff, GraduationCap, Landmark, Menu, Pencil, Plus, ShieldCheck, Trash2, UserCircle, X } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -30,13 +30,16 @@ type UserListItem = {
   joiningDate: string | null;
   profilePhoto: string | null;
   documentUrls: string[];
+  gender: string | null;       // NEW
+  religion: string | null;     // NEW
   address: string | null;      // NEW
   salary: number | null;       // NEW
-  department: string | null;   // NEW
   yearsOfExperience: number | null;
+  department: string | null;   // NEW
 };
 
-type DepartmentOption = { id: string; name: string; code: string }; // NEW
+type CourseItem = { id: string; code: string; name: string; duration: number };
+type DepartmentItem = { id: string; code: string; name: string; courses: CourseItem[] };
 
 const roleTitles: Record<string, string> = {
   SUPER_ADMIN: 'Super Admin Dashboard',
@@ -103,7 +106,8 @@ function App() {
   username: '', collegeId: '', email: '', firstName: '', lastName: '', password: '',
   role: user?.role === 'SUPER_ADMIN' ? 'ADMIN' : 'Select a Role',
   dob: '', joiningDate: '', yearsOfExperience: '', phoneNumber: '', // NEW
-  address: '', salary: '', departmentId: '', // NEW
+  gender: '', religion: '', // NEW
+  address: '', salary: '', // NEW
   });
   const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null); // NEW
   const [teacherDocuments, setTeacherDocuments] = useState<File[]>([]);        // NEW
@@ -117,13 +121,32 @@ function App() {
   const [isDeletingUser, setIsDeletingUser] = useState<string | null>(null);
   const [editUserForm, setEditUserForm] = useState({
   id: '', username: '', collegeId: '', email: '', firstName: '', lastName: '', role: '', isActive: true,
-});
-const [editUserError, setEditUserError] = useState('');
-// const [isEditingUser, setIsEditingUser] = useState(false);
-const [isUpdatingUser, setIsUpdatingUser] = useState(false);
-const [viewUser, setViewUser] = useState<UserListItem | null>(null);
-const [activePage, setActivePage] = useState<'overview' | 'users' | 'students' | 'teachers' | 'exam-cell' | 'fees' | 'profile' | 'edit-user' | 'view-user'>('overview');  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  const [quickActionsOpen, setQuickActionsOpen] = useState(false);
+  });
+  const [editUserError, setEditUserError] = useState('');
+  // const [isEditingUser, setIsEditingUser] = useState(false);
+  const [isUpdatingUser, setIsUpdatingUser] = useState(false);
+  const [viewUser, setViewUser] = useState<UserListItem | null>(null);
+  const [departmentList, setDepartmentList] = useState<DepartmentItem[]>([]);
+  const [departmentsLoading, setDepartmentsLoading] = useState(false);
+  const [expandedDepartments, setExpandedDepartments] = useState<Record<string, boolean>>({});
+  const [departmentError, setDepartmentError] = useState('');
+  const [departmentSuccess, setDepartmentSuccess] = useState('');
+  const [isAddDepartmentOpen, setIsAddDepartmentOpen] = useState(false);
+  const [addDepartmentForm, setAddDepartmentForm] = useState({ code: '', name: '' });
+  const [addDepartmentError, setAddDepartmentError] = useState('');
+  const [isSavingDepartment, setIsSavingDepartment] = useState(false);
+  const [editDepartmentTarget, setEditDepartmentTarget] = useState<DepartmentItem | null>(null);
+  const [editDepartmentForm, setEditDepartmentForm] = useState({ code: '', name: '' });
+  const [editDepartmentError, setEditDepartmentError] = useState('');
+  const [isSavingEditDepartment, setIsSavingEditDepartment] = useState(false);
+  const [deletingDepartmentId, setDeletingDepartmentId] = useState<string | null>(null);
+  const [addCourseTarget, setAddCourseTarget] = useState<{ id: string; name: string } | null>(null);
+  const [addCourseForm, setAddCourseForm] = useState({ code: '', name: '', duration: '' });
+  const [addCourseError, setAddCourseError] = useState('');
+  const [isSavingCourse, setIsSavingCourse] = useState(false);
+  const [removingCourseKey, setRemovingCourseKey] = useState<string | null>(null);
+  const [activePage, setActivePage] = useState<'overview' | 'users' | 'departments' | 'students' | 'teachers' | 'exam-cell' | 'fees' | 'profile' | 'edit-user' | 'view-user'>('overview');  const [quickActionsOpen, setQuickActionsOpen] = useState(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [mobileNavOpen, setMobileNavOpen] = useState(false); // NEW
   const [passwordForm, setPasswordForm] = useState({
     oldPassword: '',
@@ -150,21 +173,16 @@ const [activePage, setActivePage] = useState<'overview' | 'users' | 'students' |
       }
     }
   }, []);
-  const [departments, setDepartments] = useState<DepartmentOption[]>([]); // NEW
-
-  useEffect(() => {
-  if (user && (user.role === 'SUPER_ADMIN' || user.role === 'CHAIRMAN')) {
-    const token = localStorage.getItem('collegePortalToken');
-    axios
-      .get(`${API_URL}/api/auth/departments`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((res) => setDepartments(res.data.departments || []))
-      .catch(() => setDepartments([]));
-  }
-}, [user]);
 
   useEffect(() => {
     if (user && (user.role === 'SUPER_ADMIN' || user.role === 'CHAIRMAN')) {
       fetchUsers();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user && (user.role === 'SUPER_ADMIN' || user.role === 'CHAIRMAN')) {
+      fetchDepartments();
     }
   }, [user]);
 
@@ -265,9 +283,10 @@ const [activePage, setActivePage] = useState<'overview' | 'users' | 'students' |
         joiningDate: '',
         yearsOfExperience: '',
         phoneNumber: '',
+        gender: '',
+        religion: '',
         address: '',
         salary: '',
-        departmentId: '',
       });
       setProfilePhotoFile(null);       // NEW
       setTeacherDocuments([]);         // NEW
@@ -280,6 +299,156 @@ const [activePage, setActivePage] = useState<'overview' | 'users' | 'students' |
       setCreateUserError(message);
     } finally {
       setIsCreatingUser(false);
+    }
+  };
+
+  const fetchDepartments = async () => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token) return;
+    setDepartmentsLoading(true);
+    try {
+      const response = await axios.get(`${API_URL}/api/departments`, { headers: { Authorization: `Bearer ${token}` } });
+      setDepartmentList(response.data.departments || []);
+    } catch (err) {
+      console.error('Failed to load departments', err);
+      setDepartmentList([]);
+    } finally {
+      setDepartmentsLoading(false);
+    }
+  };
+
+  const handleCreateDepartment = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAddDepartmentError('');
+    if (!addDepartmentForm.code.trim() || !addDepartmentForm.name.trim()) {
+      setAddDepartmentError('Both department code and name are required.');
+      return;
+    }
+    setIsSavingDepartment(true);
+    try {
+      const token = localStorage.getItem('collegePortalToken');
+      const response = await axios.post(
+        `${API_URL}/api/departments`,
+        { code: addDepartmentForm.code.trim(), name: addDepartmentForm.name.trim() },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      setDepartmentList((current) => [...current, response.data.department]);
+      setIsAddDepartmentOpen(false);
+      setDepartmentError('');
+      setDepartmentSuccess('Department created successfully.');
+    } catch (err) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to create department.' : 'Unable to create department.';
+      setAddDepartmentError(message);
+    } finally {
+      setIsSavingDepartment(false);
+    }
+  };
+
+  const openAddCourse = (dept: DepartmentItem) => {
+    setAddCourseTarget({ id: dept.id, name: dept.name });
+    setAddCourseForm({ code: '', name: '', duration: '' });
+    setAddCourseError('');
+  };
+
+  const openEditDepartment = (dept: DepartmentItem) => {
+    setEditDepartmentTarget(dept);
+    setEditDepartmentForm({ code: dept.code, name: dept.name });
+    setEditDepartmentError('');
+  };
+
+  const handleEditDepartment = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setEditDepartmentError('');
+    if (!editDepartmentForm.code.trim() || !editDepartmentForm.name.trim()) {
+      setEditDepartmentError('Both department code and name are required.');
+      return;
+    }
+    if (!editDepartmentTarget) return;
+    setIsSavingEditDepartment(true);
+    try {
+      const token = localStorage.getItem('collegePortalToken');
+      const response = await axios.patch(
+        `${API_URL}/api/departments/${editDepartmentTarget.id}`,
+        { code: editDepartmentForm.code.trim(), name: editDepartmentForm.name.trim() },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      setDepartmentList((current) =>
+        current.map((d) => (d.id === editDepartmentTarget.id ? { ...d, code: response.data.department.code, name: response.data.department.name } : d)),
+      );
+      setEditDepartmentTarget(null);
+      setDepartmentError('');
+      setDepartmentSuccess('Department updated successfully.');
+    } catch (err) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to update department.' : 'Unable to update department.';
+      setEditDepartmentError(message);
+    } finally {
+      setIsSavingEditDepartment(false);
+    }
+  };
+
+  const handleDeleteDepartment = async (dept: DepartmentItem) => {
+    const confirmed = window.confirm(`Delete "${dept.name}"? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setDeletingDepartmentId(dept.id);
+    setDepartmentError('');
+    try {
+      const token = localStorage.getItem('collegePortalToken');
+      await axios.delete(`${API_URL}/api/departments/${dept.id}`, { headers: { Authorization: `Bearer ${token}` } });
+      setDepartmentList((current) => current.filter((d) => d.id !== dept.id));
+      setDepartmentSuccess('Department deleted successfully.');
+    } catch (err) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to delete department.' : 'Unable to delete department.';
+      setDepartmentError(message);
+    } finally {
+      setDeletingDepartmentId(null);
+    }
+  };
+
+  const handleAddCourse = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAddCourseError('');
+    if (!addCourseForm.code.trim() || !addCourseForm.name.trim() || !addCourseForm.duration.trim()) {
+      setAddCourseError('Course code, name and duration are required.');
+      return;
+    }
+    if (!addCourseTarget) return;
+    setIsSavingCourse(true);
+    try {
+      const token = localStorage.getItem('collegePortalToken');
+      const response = await axios.post(
+        `${API_URL}/api/departments/${addCourseTarget.id}/courses`,
+        { code: addCourseForm.code.trim(), name: addCourseForm.name.trim(), duration: Number(addCourseForm.duration) },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const newCourse = response.data.course as CourseItem;
+      setDepartmentList((current) =>
+        current.map((d) => (d.id === addCourseTarget.id ? { ...d, courses: [...d.courses, newCourse] } : d)),
+      );
+      setAddCourseTarget(null);
+      setDepartmentError('');
+      setDepartmentSuccess('Course added successfully.');
+    } catch (err) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to add course.' : 'Unable to add course.';
+      setAddCourseError(message);
+    } finally {
+      setIsSavingCourse(false);
+    }
+  };
+
+  const handleRemoveCourse = async (departmentId: string, courseId: string) => {
+    setRemovingCourseKey(courseId);
+    setDepartmentError('');
+    try {
+      const token = localStorage.getItem('collegePortalToken');
+      await axios.delete(`${API_URL}/api/departments/${departmentId}/courses/${courseId}`, { headers: { Authorization: `Bearer ${token}` } });
+      setDepartmentSuccess('Course removed from department.');
+      await fetchDepartments();
+    } catch (err) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to remove course.' : 'Unable to remove course.';
+      setDepartmentError(message);
+    } finally {
+      setRemovingCourseKey(null);
     }
   };
 
@@ -426,6 +595,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
         ? [
             { id: 'overview', label: 'Overview' },
             { id: 'users', label: 'Users' },
+            { id: 'departments', label: 'Departments' },
             { id: 'students', label: 'Students' },
             { id: 'teachers', label: 'Teachers' },
             { id: 'exam-cell', label: 'Exam Cell' },
@@ -541,8 +711,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                     key={item.id}
                     type="button"
                     onClick={() => {
-                      setActivePage(item.id as 'overview' | 'users' | 'students' | 'teachers' | 'exam-cell' | 'fees' | 'profile');
-                      setQuickActionsOpen(false);
+                    setActivePage(item.id as 'overview' | 'users' | 'departments' | 'students' | 'teachers' | 'exam-cell' | 'fees' | 'profile');                      setQuickActionsOpen(false);
                       setMobileNavOpen(false); // NEW: close drawer after picking a page
                     }}
                     className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${
@@ -553,8 +722,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                   >
                     <span>{item.label}</span>
                     <span className="rounded-full border border-current/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em]">
-                      {item.id === 'overview' ? 'Home' : item.id === 'users' ? 'Team' : item.id === 'profile' ? 'Info' : item.id === 'students' ? 'Stu' : item.id === 'teachers' ? 'Fac' : item.id === 'exam-cell' ? 'Exam' : 'Fees'}
-                    </span>
+                    {item.id === 'overview' ? 'Home' : item.id === 'users' ? 'Team' : item.id === 'departments' ? 'Dept' : item.id === 'profile' ? 'Info' : item.id === 'students' ? 'Stu' : item.id === 'teachers' ? 'Fac' : item.id === 'exam-cell' ? 'Exam' : 'Fees'}                    </span>
                   </button>
                 ))}
               </nav>
@@ -745,6 +913,19 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Email</label>
                           <input required type="email" value={createUserForm.email} onChange={(e) => setCreateUserForm((current) => ({ ...current, email: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
                         </div>
+                        <div>
+                          <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Gender</label>
+                          <select required value={createUserForm.gender} onChange={(e) => setCreateUserForm((c) => ({ ...c, gender: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                            <option value="">Select Gender</option>
+                            <option value="MALE">Male</option>
+                            <option value="FEMALE">Female</option>
+                            <option value="OTHER">Other</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Religion</label>
+                          <input value={createUserForm.religion} onChange={(e) => setCreateUserForm((c) => ({ ...c, religion: e.target.value }))} placeholder="e.g. Hindu, Muslim, Christian" className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                        </div>
                         <div className="md:col-span-2">
                           <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Address</label>
                           <input required value={createUserForm.address} onChange={(e) => setCreateUserForm((c) => ({ ...c, address: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
@@ -819,15 +1000,6 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                         </div>
                         {['TEACHER', 'EXAM_CELL', 'ADMIN'].includes(createUserForm.role) ? (
                           <>
-                            <div>
-                              <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Department</label>
-                              <select required value={createUserForm.departmentId} onChange={(e) => setCreateUserForm((c) => ({ ...c, departmentId: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
-                                <option value="">Select department</option>
-                                {departments.map((dept) => (
-                                  <option key={dept.id} value={dept.id}>{dept.name}</option>
-                                ))}
-                              </select>
-                            </div>
                             <div>
                               <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Salary</label>
                               <input required type="number" min="0" step="0.01" value={createUserForm.salary} onChange={(e) => setCreateUserForm((c) => ({ ...c, salary: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
@@ -917,6 +1089,121 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                       )}
                     </div>
                   </div>
+                  ) : activePage === 'departments' && (user.role === 'SUPER_ADMIN' || user.role === 'CHAIRMAN') ? (
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Administration</p>
+                          <h3 className={`mt-2 text-2xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>Department Management</h3>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { setAddDepartmentForm({ code: '', name: '' }); setAddDepartmentError(''); setIsAddDepartmentOpen(true); }}
+                          className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:bg-primary/90"
+                        >
+                          <Plus className="h-4 w-4" />
+                          Add Department
+                        </button>
+                      </div>
+
+                      {departmentError ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{departmentError}</div> : null}
+                      {departmentSuccess ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{departmentSuccess}</div> : null}
+
+                      {departmentsLoading ? (
+                        <div className={isDark ? 'text-slate-400' : 'text-slate-500'}>Loading departments...</div>
+                      ) : departmentList.length === 0 ? (
+                        <div className={isDark ? 'text-slate-400' : 'text-slate-500'}>No departments yet. Click "Add Department" to create one.</div>
+                      ) : (
+                        <div className="space-y-4">
+                          {departmentList.map((dept, index) => {
+                            const isExpanded = !!expandedDepartments[dept.id];
+                            return (
+                              <div key={dept.id} className={`${isDark ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-white'} overflow-hidden rounded-2xl border shadow-sm`}>
+                                <div className="flex w-full items-center justify-between gap-3 px-6 py-4">
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedDepartments((current) => ({ ...current, [dept.id]: !current[dept.id] }))}
+                                    className="flex flex-1 items-center gap-3 text-left"
+                                  >
+                                    <span className={`${isDark ? 'text-slate-500' : 'text-slate-400'} text-sm font-medium`}>{index + 1}.</span>
+                                    <span className={`${isDark ? 'text-slate-500' : 'text-slate-400'} rounded-lg border px-2 py-0.5 text-xs font-semibold uppercase tracking-wide`}>{dept.code}</span>
+                                    <span className={`font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>{dept.name}</span>
+                                    <span className={`${isDark ? 'text-slate-400' : 'text-slate-500'} text-xs`}>{dept.courses.length} Course{dept.courses.length === 1 ? '' : 's'}</span>
+                                  </button>
+
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); openEditDepartment(dept); }}
+                                      className={`${isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'} rounded-lg p-1.5`}
+                                      aria-label={`Edit ${dept.name}`}
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); handleDeleteDepartment(dept); }}
+                                      disabled={deletingDepartmentId === dept.id}
+                                      className="rounded-lg p-1.5 text-red-500 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                      aria-label={`Delete ${dept.name}`}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedDepartments((current) => ({ ...current, [dept.id]: !current[dept.id] }))}
+                                      className={isDark ? 'p-1.5 text-slate-400' : 'p-1.5 text-slate-500'}
+                                      aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                                    >
+                                      {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {isExpanded ? (
+                                  <div className={`${isDark ? 'border-slate-800' : 'border-slate-200'} border-t px-6 py-4`}>
+                                    <p className={`mb-3 text-xs font-semibold uppercase tracking-[0.2em] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Courses</p>
+                                    {dept.courses.length === 0 ? (
+                                      <p className={`mb-4 text-sm ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>No courses added yet.</p>
+                                    ) : (
+                                      <ul className="mb-4 space-y-2">
+                                        {dept.courses.map((course) => (
+                                          <li key={course.id} className={`${isDark ? 'border-slate-800 bg-slate-900/50' : 'border-slate-100 bg-slate-50'} flex items-center justify-between gap-3 rounded-xl border px-4 py-2`}>
+                                            <div className="flex min-w-0 items-center gap-3">
+                                              <span className={`${isDark ? 'text-slate-500' : 'text-slate-400'} rounded-md border px-2 py-0.5 text-xs font-semibold uppercase tracking-wide`}>{course.code}</span>
+                                              <span className={`truncate text-sm ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{course.name}</span>
+                                              <span className={`shrink-0 text-xs ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>{course.duration} {course.duration === 1 ? 'Year' : 'Years'}</span>
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleRemoveCourse(dept.id, course.id)}
+                                              disabled={removingCourseKey === course.id}
+                                              className="shrink-0 text-xs font-semibold text-red-600 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                              {removingCourseKey === course.id ? 'Removing...' : 'Remove'}
+                                            </button>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                    <div className="flex justify-end">
+                                      <button
+                                        type="button"
+                                        onClick={() => openAddCourse(dept)}
+                                        className={`${isDark ? 'border-slate-700 text-slate-200 hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-50'} flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium`}
+                                      >
+                                        <Plus className="h-4 w-4" />
+                                        Add Course
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   ) : activePage === 'edit-user' ? (
                     <div className="space-y-6">
                       <div className={`${isDark ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-white'} rounded-2xl border p-6 shadow-sm`}>
@@ -1014,13 +1301,17 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Phone number</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.phoneNumber || '—'}</dd></div>
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Date of birth</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.dob ? new Date(viewUser.dob).toLocaleDateString() : '—'}</dd></div>
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Joining date</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.joiningDate ? new Date(viewUser.joiningDate).toLocaleDateString() : '—'}</dd></div>
+                          <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Gender</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.gender ? viewUser.gender.charAt(0) + viewUser.gender.slice(1).toLowerCase() : '—'}</dd></div>
+                          <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Religion</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.religion || '—'}</dd></div>
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Address</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.address || '—'}</dd></div>
                           {['TEACHER', 'EXAM_CELL', 'ADMIN'].includes(viewUser.role) ? (
                             <>
                               <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Years of experience</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.yearsOfExperience ?? '—'}</dd></div>
-                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Department</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.department || '—'}</dd></div>
                               <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Salary</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.salary != null ? `$${viewUser.salary.toLocaleString()}` : '—'}</dd></div>
                             </>
+                          ) : null}
+                          {viewUser.role === 'TEACHER' ? (
+                            <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Department</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.department || 'Not assigned'}</dd></div>
                           ) : null}
                         </dl>
                         {viewUser.documentUrls.length > 0 ? (
@@ -1319,6 +1610,104 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                   </div>
                 )}
               </main>
+              {isAddDepartmentOpen ? (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                  <div className={`${isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'} w-full max-w-md rounded-2xl p-6 shadow-2xl`}>
+                    <div className="mb-4 flex items-center justify-between">
+                      <h3 className="text-xl font-semibold">Add New Department</h3>
+                      <button type="button" onClick={() => setIsAddDepartmentOpen(false)} className={isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'} aria-label="Close">
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+                    <form className="space-y-4" onSubmit={handleCreateDepartment}>
+                      <div>
+                        <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Department Code</label>
+                        <input value={addDepartmentForm.code} onChange={(e) => setAddDepartmentForm((c) => ({ ...c, code: e.target.value }))} placeholder="Enter department code" className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
+                      </div>
+                      <div>
+                        <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Department Name</label>
+                        <input value={addDepartmentForm.name} onChange={(e) => setAddDepartmentForm((c) => ({ ...c, name: e.target.value }))} placeholder="Enter department name" className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
+                      </div>
+                      {addDepartmentError ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{addDepartmentError}</div> : null}
+                      <div className="flex justify-end gap-3">
+                        <button type="button" onClick={() => setIsAddDepartmentOpen(false)} className={`${isDark ? 'border-slate-700 text-slate-200' : 'border-slate-200 text-slate-700'} rounded-xl border px-4 py-2.5 text-sm font-medium`}>
+                          Cancel
+                        </button>
+                        <button type="submit" disabled={isSavingDepartment} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70">
+                          {isSavingDepartment ? 'Saving...' : 'Save Department'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              ) : null}
+              {editDepartmentTarget ? (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                  <div className={`${isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'} w-full max-w-md rounded-2xl p-6 shadow-2xl`}>
+                    <div className="mb-4 flex items-center justify-between">
+                      <h3 className="text-xl font-semibold">Edit Department</h3>
+                      <button type="button" onClick={() => setEditDepartmentTarget(null)} className={isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'} aria-label="Close">
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+                    <form className="space-y-4" onSubmit={handleEditDepartment}>
+                      <div>
+                        <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Department Code</label>
+                        <input value={editDepartmentForm.code} onChange={(e) => setEditDepartmentForm((c) => ({ ...c, code: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
+                      </div>
+                      <div>
+                        <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Department Name</label>
+                        <input value={editDepartmentForm.name} onChange={(e) => setEditDepartmentForm((c) => ({ ...c, name: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
+                      </div>
+                      {editDepartmentError ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{editDepartmentError}</div> : null}
+                      <div className="flex justify-end gap-3">
+                        <button type="button" onClick={() => setEditDepartmentTarget(null)} className={`${isDark ? 'border-slate-700 text-slate-200' : 'border-slate-200 text-slate-700'} rounded-xl border px-4 py-2.5 text-sm font-medium`}>
+                          Cancel
+                        </button>
+                        <button type="submit" disabled={isSavingEditDepartment} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70">
+                          {isSavingEditDepartment ? 'Saving...' : 'Save Changes'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              ) : null}
+              {addCourseTarget ? (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                  <div className={`${isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'} w-full max-w-md rounded-2xl p-6 shadow-2xl`}>
+                    <div className="mb-1 flex items-center justify-between">
+                      <h3 className="text-xl font-semibold">Add Course</h3>
+                      <button type="button" onClick={() => setAddCourseTarget(null)} className={isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'} aria-label="Close">
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+                    <p className={`mb-4 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{addCourseTarget.name}</p>
+                    <form className="space-y-4" onSubmit={handleAddCourse}>
+                      <div>
+                        <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Course Code</label>
+                        <input value={addCourseForm.code} onChange={(e) => setAddCourseForm((c) => ({ ...c, code: e.target.value }))} placeholder="Enter course code" className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
+                      </div>
+                      <div>
+                        <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Course Name</label>
+                        <input value={addCourseForm.name} onChange={(e) => setAddCourseForm((c) => ({ ...c, name: e.target.value }))} placeholder="Enter course name" className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
+                      </div>
+                      <div>
+                        <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Duration (years)</label>
+                        <input type="number" min="1" value={addCourseForm.duration} onChange={(e) => setAddCourseForm((c) => ({ ...c, duration: e.target.value }))} placeholder="e.g. 3" className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
+                      </div>
+                      {addCourseError ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{addCourseError}</div> : null}
+                      <div className="flex justify-end gap-3">
+                        <button type="button" onClick={() => setAddCourseTarget(null)} className={`${isDark ? 'border-slate-700 text-slate-200' : 'border-slate-200 text-slate-700'} rounded-xl border px-4 py-2.5 text-sm font-medium`}>
+                          Cancel
+                        </button>
+                        <button type="submit" disabled={isSavingCourse} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70">
+                          {isSavingCourse ? 'Saving...' : 'Add Course'}
+                        </button>
+                      </div>
+                    </form>
+    </div>
+  </div>
+) : null}
             </div>
           </div>
         </div>
