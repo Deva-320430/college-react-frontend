@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { ArrowRight, BookOpen, ChevronDown, ChevronUp, Eye, EyeOff, GraduationCap, Landmark, Menu, Pencil, Plus, ShieldCheck, Trash2, UserCircle, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookOpen, BookMarked, Check, ChevronDown, ChevronUp, Eye, EyeOff, FolderOpen, GraduationCap, Landmark, Layers, Menu, Pencil, Plus, Save, Search, ShieldCheck, Trash2, UserCircle, X } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -32,14 +32,66 @@ type UserListItem = {
   documentUrls: string[];
   gender: string | null;       // NEW
   religion: string | null;     // NEW
+  maritalStatus: string | null; // NEW
+  partnerName: string | null;   // NEW
+  partnerOccupation: string | null; // NEW
   address: string | null;      // NEW
   salary: number | null;       // NEW
   yearsOfExperience: number | null;
   department: string | null;   // NEW
+  course: string | null;       // NEW
+  regulation: string | null;   // NEW
+  departmentId: string | null; // NEW — raw ids for the edit form
+  courseId: string | null;
+  regulationId: string | null;
+  rollNumber: string | null;            // NEW — Student
+  fatherName: string | null;            // NEW — Student
+  motherName: string | null;            // NEW — Student
+  guardianName: string | null;          // NEW — Student
+  fatherOccupation: string | null;      // NEW — Student
+  motherOccupation: string | null;      // NEW — Student
+  guardianOccupation: string | null;    // NEW — Student
+  identificationMark1: string | null;   // NEW — Student
+  identificationMark2: string | null;   // NEW — Student
+  isRegular: boolean | null;            // NEW — Student
 };
 
-type CourseItem = { id: string; code: string; name: string; duration: number };
-type DepartmentItem = { id: string; code: string; name: string; courses: CourseItem[] };
+type DepartmentItem = { id: string; code: string; name: string };
+type CourseItem = { id: string; code: string; name: string; duration: number; departments: DepartmentItem[] };
+type RegulationItem = { id: string; name: string; subjectCount: number; departments: number };
+type SyllabusSubject = {
+  id: string;
+  year: string;
+  semester: string;
+  code: string;
+  name: string;
+  credits: number;
+  departmentId: string;
+  department: { id: string; code: string; name: string };
+  regulation: { id: string; name: string };
+};
+type FeeCategoryItem = { id: string; name: string };
+type FeeStudentItem = {
+  id: string;
+  rollNumber: string;
+  studentId: string;
+  name: string;
+  collegeId: string;
+  department: string | null;
+};
+type FeeItem = {
+  id: string;
+  amount: number;
+  paidAmount: number;
+  pendingAmount: number;
+  status: string;
+  dueDate: string | null;
+  createdAt: string;
+  category: { id: string; name: string } | null;
+  student?: { id: string; rollNumber: string; user: { firstName: string; lastName: string; collegeId: string } };
+};
+
+const amountFmt = (n: number): string => `$${n.toLocaleString('en-US')}`;
 
 const roleTitles: Record<string, string> = {
   SUPER_ADMIN: 'Super Admin Dashboard',
@@ -93,6 +145,7 @@ function App() {
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [roleGroups, setRoleGroups] = useState<Record<string, UserListItem[]>>({});
+  const [usersRoleFilter, setUsersRoleFilter] = useState('ALL'); // 'ALL' | 'SUPER_ADMIN' | 'ADMIN' | 'CHAIRMAN' | 'EXAM_CELL' | 'TEACHER' | 'STUDENT'
   // const [createUserForm, setCreateUserForm] = useState({
   //   username: '',
   //   collegeId: '',
@@ -107,7 +160,10 @@ function App() {
   role: user?.role === 'SUPER_ADMIN' ? 'ADMIN' : 'Select a Role',
   dob: '', joiningDate: '', yearsOfExperience: '', phoneNumber: '', // NEW
   gender: '', religion: '', // NEW
+  maritalStatus: '', partnerName: '', partnerOccupation: '', // NEW
+  departmentId: '', courseId: '', regulationId: '', // NEW
   address: '', salary: '', // NEW
+  rollNumber: '', fatherName: '', motherName: '', guardianName: '', fatherOccupation: '', motherOccupation: '', guardianOccupation: '', identificationMark1: '', identificationMark2: '', isRegular: '', // NEW — Student
   });
   const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null); // NEW
   const [teacherDocuments, setTeacherDocuments] = useState<File[]>([]);        // NEW
@@ -121,6 +177,10 @@ function App() {
   const [isDeletingUser, setIsDeletingUser] = useState<string | null>(null);
   const [editUserForm, setEditUserForm] = useState({
   id: '', username: '', collegeId: '', email: '', firstName: '', lastName: '', role: '', isActive: true,
+  phoneNumber: '', dob: '', joiningDate: '', gender: '', religion: '', address: '', // NEW
+  maritalStatus: '', partnerName: '', partnerOccupation: '', salary: '', yearsOfExperience: '', // NEW — staff roles
+  departmentId: '', courseId: '', regulationId: '', // NEW — Teacher/Student
+  rollNumber: '', fatherName: '', motherName: '', guardianName: '', fatherOccupation: '', motherOccupation: '', guardianOccupation: '', identificationMark1: '', identificationMark2: '', isRegular: '', // NEW — Student
   });
   const [editUserError, setEditUserError] = useState('');
   // const [isEditingUser, setIsEditingUser] = useState(false);
@@ -128,7 +188,6 @@ function App() {
   const [viewUser, setViewUser] = useState<UserListItem | null>(null);
   const [departmentList, setDepartmentList] = useState<DepartmentItem[]>([]);
   const [departmentsLoading, setDepartmentsLoading] = useState(false);
-  const [expandedDepartments, setExpandedDepartments] = useState<Record<string, boolean>>({});
   const [departmentError, setDepartmentError] = useState('');
   const [departmentSuccess, setDepartmentSuccess] = useState('');
   const [isAddDepartmentOpen, setIsAddDepartmentOpen] = useState(false);
@@ -140,12 +199,32 @@ function App() {
   const [editDepartmentError, setEditDepartmentError] = useState('');
   const [isSavingEditDepartment, setIsSavingEditDepartment] = useState(false);
   const [deletingDepartmentId, setDeletingDepartmentId] = useState<string | null>(null);
-  const [addCourseTarget, setAddCourseTarget] = useState<{ id: string; name: string } | null>(null);
+  const [courseList, setCourseList] = useState<CourseItem[]>([]);
+  const [coursesLoading, setCoursesLoading] = useState(false);
+  const [expandedCourses, setExpandedCourses] = useState<Record<string, boolean>>({});
+  const [isAddCourseOpen, setIsAddCourseOpen] = useState(false);
   const [addCourseForm, setAddCourseForm] = useState({ code: '', name: '', duration: '' });
   const [addCourseError, setAddCourseError] = useState('');
   const [isSavingCourse, setIsSavingCourse] = useState(false);
-  const [removingCourseKey, setRemovingCourseKey] = useState<string | null>(null);
-  const [activePage, setActivePage] = useState<'overview' | 'users' | 'departments' | 'students' | 'teachers' | 'exam-cell' | 'fees' | 'profile' | 'edit-user' | 'view-user'>('overview');  const [quickActionsOpen, setQuickActionsOpen] = useState(false);
+  const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null);
+  const [addDepartmentTarget, setAddDepartmentTarget] = useState<{ id: string; name: string } | null>(null);
+  const [assignDepartmentForm, setAssignDepartmentForm] = useState({ departmentId: '' });
+  const [assignDepartmentError, setAssignDepartmentError] = useState('');
+  const [isSavingDepartmentAssignment, setIsSavingDepartmentAssignment] = useState(false);
+  const [removingDepartmentKey, setRemovingDepartmentKey] = useState<string | null>(null);
+  const [regulations, setRegulations] = useState<RegulationItem[]>([]);
+  const [regulationsLoading, setRegulationsLoading] = useState(false);
+  const [selectedRegulation, setSelectedRegulation] = useState<RegulationItem | null>(null);
+  const [syllabusSubjects, setSyllabusSubjects] = useState<SyllabusSubject[]>([]);
+  const [syllabusLoading, setSyllabusLoading] = useState(false);
+  const [deletingSubjectId, setDeletingSubjectId] = useState<string | null>(null);
+  const [fees, setFees] = useState<FeeItem[]>([]);
+  const [feesLoading, setFeesLoading] = useState(false);
+  const [feesError, setFeesError] = useState('');
+  const [feeCategories, setFeeCategories] = useState<FeeCategoryItem[]>([]);
+  const [feeStudents, setFeeStudents] = useState<FeeStudentItem[]>([]);
+  const [deletingFeeId, setDeletingFeeId] = useState<string | null>(null);
+  const [activePage, setActivePage] = useState<'overview' | 'users' | 'create-users' | 'departments' | 'students' | 'teachers' | 'exam-cell' | 'fees' | 'syllabus' | 'profile' | 'edit-user' | 'view-user'>('overview');  const [quickActionsOpen, setQuickActionsOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [mobileNavOpen, setMobileNavOpen] = useState(false); // NEW
   const [passwordForm, setPasswordForm] = useState({
@@ -183,6 +262,8 @@ function App() {
   useEffect(() => {
     if (user && (user.role === 'SUPER_ADMIN' || user.role === 'CHAIRMAN')) {
       fetchDepartments();
+      fetchCourses();
+      fetchRegulations();
     }
   }, [user]);
 
@@ -285,8 +366,24 @@ function App() {
         phoneNumber: '',
         gender: '',
         religion: '',
+        maritalStatus: '',
+        partnerName: '',
+        partnerOccupation: '',
+        departmentId: '',
+        courseId: '',
+        regulationId: '',
         address: '',
         salary: '',
+        rollNumber: '',
+        fatherName: '',
+        motherName: '',
+        guardianName: '',
+        fatherOccupation: '',
+        motherOccupation: '',
+        guardianOccupation: '',
+        identificationMark1: '',
+        identificationMark2: '',
+        isRegular: '',
       });
       setProfilePhotoFile(null);       // NEW
       setTeacherDocuments([]);         // NEW
@@ -317,6 +414,229 @@ function App() {
     }
   };
 
+  const fetchCourses = async () => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token) return;
+    setCoursesLoading(true);
+    try {
+      const response = await axios.get(`${API_URL}/api/courses`, { headers: { Authorization: `Bearer ${token}` } });
+      setCourseList(response.data.courses || []);
+    } catch (err) {
+      console.error('Failed to load courses', err);
+      setCourseList([]);
+    } finally {
+      setCoursesLoading(false);
+    }
+  };
+
+  /* ---------------- Syllabus ---------------- */
+
+  const fetchRegulations = async () => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token) return;
+    setRegulationsLoading(true);
+    try {
+      const response = await axios.get(`${API_URL}/api/syllabus/regulations`, { headers: { Authorization: `Bearer ${token}` } });
+      setRegulations(response.data.regulations || []);
+    } catch (err) {
+      console.error('Failed to load regulations', err);
+      setRegulations([]);
+    } finally {
+      setRegulationsLoading(false);
+    }
+  };
+
+  const loadSubjects = async (regulationId: string, departmentId?: string) => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token) return;
+    setSyllabusLoading(true);
+    try {
+      const response = await axios.get(`${API_URL}/api/syllabus/${regulationId}/subjects`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: departmentId ? { departmentId } : {},
+      });
+      setSyllabusSubjects(response.data.subjects || []);
+    } catch (err) {
+      console.error('Failed to load subjects', err);
+      setSyllabusSubjects([]);
+    } finally {
+      setSyllabusLoading(false);
+    }
+  };
+
+  const addRegulation = async (name: string): Promise<{ ok: boolean; message: string }> => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token) return { ok: false, message: 'You are not signed in.' };
+    try {
+      const response = await axios.post(`${API_URL}/api/syllabus/regulations`, { name }, { headers: { Authorization: `Bearer ${token}` } });
+      const created = response.data.regulation as { id: string; name: string };
+      setRegulations((current) => [...current, { id: created.id, name: created.name, subjectCount: 0, departments: 0 }]);
+      return { ok: true, message: response.data.message || 'Regulation added successfully.' };
+    } catch (err) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to add regulation.' : 'Unable to add regulation.';
+      return { ok: false, message };
+    }
+  };
+
+  const deleteRegulation = async (regulation: RegulationItem): Promise<{ ok: boolean; message: string }> => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token) return { ok: false, message: 'You are not signed in.' };
+    try {
+      const response = await axios.delete(`${API_URL}/api/syllabus/regulations/${regulation.id}`, { headers: { Authorization: `Bearer ${token}` } });
+      setRegulations((current) => current.filter((r) => r.id !== regulation.id));
+      if (selectedRegulation?.id === regulation.id) {
+        setSelectedRegulation(null);
+        setSyllabusSubjects([]);
+      }
+      return { ok: true, message: response.data.message || 'Regulation deleted successfully.' };
+    } catch (err) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to delete regulation.' : 'Unable to delete regulation.';
+      return { ok: false, message };
+    }
+  };
+
+  const saveSubject = async (payload: {
+    subjectId?: string;
+    departmentId: string;
+    year: string;
+    semester: string;
+    code: string;
+    name: string;
+    credits: number;
+  }): Promise<{ ok: boolean; message: string }> => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token) return { ok: false, message: 'You are not signed in.' };
+    if (!selectedRegulation) return { ok: false, message: 'Select a regulation first.' };
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      if (payload.subjectId) {
+        const response = await axios.patch(
+          `${API_URL}/api/syllabus/subjects/${payload.subjectId}`,
+          { departmentId: payload.departmentId, year: payload.year, semester: payload.semester, code: payload.code, name: payload.name, credits: payload.credits },
+          { headers },
+        );
+        const updated = response.data.subject as SyllabusSubject;
+        setSyllabusSubjects((current) => current.map((s) => (s.id === updated.id ? updated : s)));
+        fetchRegulations();
+        return { ok: true, message: response.data.message || 'Subject updated successfully.' };
+      }
+      const response = await axios.post(
+        `${API_URL}/api/syllabus/${selectedRegulation.id}/subjects`,
+        { departmentId: payload.departmentId, year: payload.year, semester: payload.semester, code: payload.code, name: payload.name, credits: payload.credits },
+        { headers },
+      );
+      const created = response.data.subject as SyllabusSubject;
+      setSyllabusSubjects((current) => [...current, created]);
+      fetchRegulations();
+      return { ok: true, message: response.data.message || 'Subject added successfully.' };
+    } catch (err) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to save subject.' : 'Unable to save subject.';
+      return { ok: false, message };
+    }
+  };
+
+  const deleteSubject = async (subject: SyllabusSubject): Promise<{ ok: boolean; message: string }> => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token) return { ok: false, message: 'You are not signed in.' };
+    setDeletingSubjectId(subject.id);
+    try {
+      const response = await axios.delete(`${API_URL}/api/syllabus/subjects/${subject.id}`, { headers: { Authorization: `Bearer ${token}` } });
+      setSyllabusSubjects((current) => current.filter((s) => s.id !== subject.id));
+      fetchRegulations();
+      return { ok: true, message: response.data.message || 'Subject deleted successfully.' };
+    } catch (err) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to delete subject.' : 'Unable to delete subject.';
+      return { ok: false, message };
+    } finally {
+      setDeletingSubjectId(null);
+    }
+  };
+
+  const fetchFees = async (): Promise<void> => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token) return;
+    setFeesLoading(true);
+    setFeesError('');
+    try {
+      const isStaff = user && ['SUPER_ADMIN', 'CHAIRMAN', 'ADMIN', 'EXAM_CELL'].includes(user.role);
+      const url = isStaff ? `${API_URL}/api/fees` : `${API_URL}/api/fees/me`;
+      const response = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
+      setFees(response.data.fees || []);
+    } catch (err) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to load fee entries.' : 'Unable to load fee entries.';
+      setFeesError(message);
+      setFees([]);
+    } finally {
+      setFeesLoading(false);
+    }
+  };
+
+  const fetchFeeMeta = async (): Promise<void> => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token) return;
+    try {
+      const [categoriesRes, studentsRes] = await Promise.all([
+        axios.get(`${API_URL}/api/fees/categories`, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`${API_URL}/api/fees/students`, { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      setFeeCategories(categoriesRes.data.categories || []);
+      setFeeStudents(studentsRes.data.students || []);
+    } catch {
+      setFeeCategories([]);
+      setFeeStudents([]);
+    }
+  };
+
+  const addFee = async (payload: {
+    studentId: string;
+    categoryId: string;
+    amount: number;
+    dueDate?: string;
+  }): Promise<{ ok: boolean; message: string }> => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token) return { ok: false, message: 'You are not signed in.' };
+    try {
+      const response = await axios.post(
+        `${API_URL}/api/fees`,
+        {
+          studentId: payload.studentId,
+          categoryId: payload.categoryId || null,
+          amount: payload.amount,
+          dueDate: payload.dueDate || null,
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const created = response.data.fee as FeeItem;
+      setFees((current) => [created, ...current]);
+      return { ok: true, message: response.data.message || 'Fee entry added successfully.' };
+    } catch (err) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to add fee entry.' : 'Unable to add fee entry.';
+      return { ok: false, message };
+    }
+  };
+
+  const deleteFee = async (fee: FeeItem): Promise<{ ok: boolean; message: string }> => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token) return { ok: false, message: 'You are not signed in.' };
+    setDeletingFeeId(fee.id);
+    try {
+      const response = await axios.delete(`${API_URL}/api/fees/${fee.id}`, { headers: { Authorization: `Bearer ${token}` } });
+      setFees((current) => current.filter((f) => f.id !== fee.id));
+      return { ok: true, message: response.data.message || 'Fee entry deleted successfully.' };
+    } catch (err) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to delete fee entry.' : 'Unable to delete fee entry.';
+      return { ok: false, message };
+    } finally {
+      setDeletingFeeId(null);
+    }
+  };
+
+  const openSyllabus = (regulation: RegulationItem) => {
+    setSelectedRegulation(regulation);
+    setActivePage('syllabus');
+    loadSubjects(regulation.id);
+  };
+
   const handleCreateDepartment = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setAddDepartmentError('');
@@ -344,10 +664,16 @@ function App() {
     }
   };
 
-  const openAddCourse = (dept: DepartmentItem) => {
-    setAddCourseTarget({ id: dept.id, name: dept.name });
+  const openAddCourse = () => {
     setAddCourseForm({ code: '', name: '', duration: '' });
     setAddCourseError('');
+    setIsAddCourseOpen(true);
+  };
+
+  const openAddDepartment = (course: CourseItem) => {
+    setAddDepartmentTarget({ id: course.id, name: course.name });
+    setAssignDepartmentForm({ departmentId: '' });
+    setAssignDepartmentError('');
   };
 
   const openEditDepartment = (dept: DepartmentItem) => {
@@ -405,50 +731,95 @@ function App() {
     }
   };
 
-  const handleAddCourse = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleCreateCourse = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setAddCourseError('');
     if (!addCourseForm.code.trim() || !addCourseForm.name.trim() || !addCourseForm.duration.trim()) {
       setAddCourseError('Course code, name and duration are required.');
       return;
     }
-    if (!addCourseTarget) return;
     setIsSavingCourse(true);
     try {
       const token = localStorage.getItem('collegePortalToken');
       const response = await axios.post(
-        `${API_URL}/api/departments/${addCourseTarget.id}/courses`,
+        `${API_URL}/api/courses`,
         { code: addCourseForm.code.trim(), name: addCourseForm.name.trim(), duration: Number(addCourseForm.duration) },
         { headers: { Authorization: `Bearer ${token}` } },
       );
-      const newCourse = response.data.course as CourseItem;
-      setDepartmentList((current) =>
-        current.map((d) => (d.id === addCourseTarget.id ? { ...d, courses: [...d.courses, newCourse] } : d)),
-      );
-      setAddCourseTarget(null);
+      setCourseList((current) => [...current, response.data.course]);
+      setIsAddCourseOpen(false);
       setDepartmentError('');
-      setDepartmentSuccess('Course added successfully.');
+      setDepartmentSuccess('Course created successfully.');
     } catch (err) {
-      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to add course.' : 'Unable to add course.';
+      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to create course.' : 'Unable to create course.';
       setAddCourseError(message);
     } finally {
       setIsSavingCourse(false);
     }
   };
 
-  const handleRemoveCourse = async (departmentId: string, courseId: string) => {
-    setRemovingCourseKey(courseId);
+  const handleDeleteCourse = async (course: CourseItem) => {
+    const confirmed = window.confirm(`Delete "${course.name}"? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setDeletingCourseId(course.id);
     setDepartmentError('');
     try {
       const token = localStorage.getItem('collegePortalToken');
-      await axios.delete(`${API_URL}/api/departments/${departmentId}/courses/${courseId}`, { headers: { Authorization: `Bearer ${token}` } });
-      setDepartmentSuccess('Course removed from department.');
-      await fetchDepartments();
+      await axios.delete(`${API_URL}/api/courses/${course.id}`, { headers: { Authorization: `Bearer ${token}` } });
+      setCourseList((current) => current.filter((c) => c.id !== course.id));
+      setDepartmentSuccess('Course deleted successfully.');
     } catch (err) {
-      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to remove course.' : 'Unable to remove course.';
+      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to delete course.' : 'Unable to delete course.';
       setDepartmentError(message);
     } finally {
-      setRemovingCourseKey(null);
+      setDeletingCourseId(null);
+    }
+  };
+
+  const handleAddDepartment = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAssignDepartmentError('');
+    if (!assignDepartmentForm.departmentId) {
+      setAssignDepartmentError('Please select a department.');
+      return;
+    }
+    if (!addDepartmentTarget) return;
+    setIsSavingDepartmentAssignment(true);
+    try {
+      const token = localStorage.getItem('collegePortalToken');
+      const response = await axios.post(
+        `${API_URL}/api/courses/${addDepartmentTarget.id}/departments`,
+        { departmentId: assignDepartmentForm.departmentId },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      setCourseList((current) =>
+        current.map((c) => (c.id === addDepartmentTarget.id ? { ...c, departments: [...c.departments, response.data.department] } : c)),
+      );
+      setAddDepartmentTarget(null);
+      setDepartmentError('');
+      setDepartmentSuccess('Department added to course.');
+    } catch (err) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to add department.' : 'Unable to add department.';
+      setAssignDepartmentError(message);
+    } finally {
+      setIsSavingDepartmentAssignment(false);
+    }
+  };
+
+  const handleRemoveDepartment = async (courseId: string, departmentId: string) => {
+    setRemovingDepartmentKey(`${courseId}:${departmentId}`);
+    setDepartmentError('');
+    try {
+      const token = localStorage.getItem('collegePortalToken');
+      await axios.delete(`${API_URL}/api/courses/${courseId}/departments/${departmentId}`, { headers: { Authorization: `Bearer ${token}` } });
+      setDepartmentSuccess('Department removed from course.');
+      await fetchCourses();
+    } catch (err) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to remove department.' : 'Unable to remove department.';
+      setDepartmentError(message);
+    } finally {
+      setRemovingDepartmentKey(null);
     }
   };
 
@@ -487,11 +858,34 @@ function App() {
   };
 
   const openEditUser = (item: UserListItem) => {
+  const toDateInput = (iso: string | null) => (iso ? new Date(iso).toISOString().slice(0, 10) : '');
   setEditUserForm({
     id: item.id, username: item.username, collegeId: item.collegeId, email: item.email,
     firstName: item.firstName, lastName: item.lastName, role: item.role, isActive: item.isActive,
-    // dob: item.dob, joiningDate: item.joiningDate, yearsOfExperience: item.yearsOfExperience,
-    // phoneNumber: item.phoneNumber, address: item.address, salary: item.salary, departmentId: item.departmentId,
+    phoneNumber: item.phoneNumber ?? '',
+    dob: toDateInput(item.dob),
+    joiningDate: toDateInput(item.joiningDate),
+    gender: item.gender ?? '',
+    religion: item.religion ?? '',
+    address: item.address ?? '',
+    maritalStatus: item.maritalStatus ?? '',
+    partnerName: item.partnerName ?? '',
+    partnerOccupation: item.partnerOccupation ?? '',
+    salary: item.salary != null ? String(item.salary) : '',
+    yearsOfExperience: item.yearsOfExperience != null ? String(item.yearsOfExperience) : '',
+    departmentId: item.departmentId ?? '',
+    courseId: item.courseId ?? '',
+    regulationId: item.regulationId ?? '',
+    rollNumber: item.rollNumber ?? '',
+    fatherName: item.fatherName ?? '',
+    motherName: item.motherName ?? '',
+    guardianName: item.guardianName ?? '',
+    fatherOccupation: item.fatherOccupation ?? '',
+    motherOccupation: item.motherOccupation ?? '',
+    guardianOccupation: item.guardianOccupation ?? '',
+    identificationMark1: item.identificationMark1 ?? '',
+    identificationMark2: item.identificationMark2 ?? '',
+    isRegular: item.isRegular === null ? '' : item.isRegular ? 'Regular' : 'Irregular',
   });
   setEditUserError('');
   // setIsEditingUser(true);
@@ -507,6 +901,30 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
       username: editUserForm.username, collegeId: editUserForm.collegeId, email: editUserForm.email,
       firstName: editUserForm.firstName, lastName: editUserForm.lastName, role: editUserForm.role,
       isActive: editUserForm.isActive,
+      phoneNumber: editUserForm.phoneNumber,
+      dob: editUserForm.dob,
+      joiningDate: editUserForm.joiningDate,
+      gender: editUserForm.gender,
+      religion: editUserForm.religion,
+      address: editUserForm.address,
+      maritalStatus: editUserForm.maritalStatus,
+      partnerName: editUserForm.partnerName,
+      partnerOccupation: editUserForm.partnerOccupation,
+      salary: editUserForm.salary,
+      yearsOfExperience: editUserForm.yearsOfExperience,
+      departmentId: editUserForm.departmentId,
+      courseId: editUserForm.courseId,
+      regulationId: editUserForm.regulationId,
+      rollNumber: editUserForm.rollNumber,
+      fatherName: editUserForm.fatherName,
+      motherName: editUserForm.motherName,
+      guardianName: editUserForm.guardianName,
+      fatherOccupation: editUserForm.fatherOccupation,
+      motherOccupation: editUserForm.motherOccupation,
+      guardianOccupation: editUserForm.guardianOccupation,
+      identificationMark1: editUserForm.identificationMark1,
+      identificationMark2: editUserForm.identificationMark2,
+      isRegular: editUserForm.isRegular,
     }, { headers: { Authorization: `Bearer ${token}` } });
     // setIsEditingUser(false);
     await fetchUsers();
@@ -595,10 +1013,12 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
         ? [
             { id: 'overview', label: 'Overview' },
             { id: 'users', label: 'Users' },
-            { id: 'departments', label: 'Departments' },
+            { id: 'create-users', label: 'Create Users' },
+            { id: 'departments', label: 'Courses' },
             { id: 'students', label: 'Students' },
             { id: 'teachers', label: 'Teachers' },
             { id: 'exam-cell', label: 'Exam Cell' },
+            { id: 'syllabus', label: 'Syllabus' },
             { id: 'fees', label: 'Fees' },
             { id: 'profile', label: 'Profile' },
           ]
@@ -607,6 +1027,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
               { id: 'overview', label: 'Overview' },
               { id: 'students', label: 'Students' },
               { id: 'teachers', label: 'Teachers' },
+              { id: 'syllabus', label: 'Syllabus' },
               { id: 'fees', label: 'Fees' },
               { id: 'profile', label: 'Profile' },
             ]
@@ -614,6 +1035,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
             ? [
                 { id: 'overview', label: 'Overview' },
                 { id: 'exam-cell', label: 'Exam Cell' },
+                { id: 'syllabus', label: 'Syllabus' },
                 { id: 'students', label: 'Students' },
                 { id: 'fees', label: 'Fees' },
                 { id: 'profile', label: 'Profile' },
@@ -636,6 +1058,20 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
       value: item.value,
       change: ['+8.2%', '+2.1%', '+12.4%', '+1.8%', '+0.0%'][index] || '+0.0%',
     }));
+
+    const usersRoleTabs = [
+      { value: 'ALL', label: 'All', count: users.length },
+      { value: 'ADMIN', label: 'Admin', count: roleGroups.ADMIN?.length ?? 0 },
+      { value: 'CHAIRMAN', label: 'Chairman', count: roleGroups.CHAIRMAN?.length ?? 0 },
+      { value: 'EXAM_CELL', label: 'Exam Cell', count: roleGroups.EXAM_CELL?.length ?? 0 },
+      { value: 'TEACHER', label: 'Teacher', count: roleGroups.TEACHER?.length ?? 0 },
+      { value: 'STUDENT', label: 'Student', count: roleGroups.STUDENT?.length ?? 0 },
+    ];
+    const roleOrder = ['SUPER_ADMIN', 'ADMIN', 'CHAIRMAN', 'EXAM_CELL', 'TEACHER', 'STUDENT'];
+    const displayedRoleGroups =
+      usersRoleFilter === 'ALL'
+        ? Object.entries(roleGroups).sort(([a], [b]) => roleOrder.indexOf(a) - roleOrder.indexOf(b))
+        : Object.entries(roleGroups).filter(([roleName]) => roleName === usersRoleFilter);
 
     const chartBars = [42, 58, 46, 72, 66, 88, 92];
     const chartLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -680,7 +1116,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
     return (
       <div className={isDark ? 'dark' : ''}>
         <div className={`min-h-screen ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-900'} p-4 lg:p-6`}>
-          <div className="mx-auto flex max-w-7xl gap-6">
+          <div className="mx-auto flex max-w-full gap-6">
             {mobileNavOpen ? (
               <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setMobileNavOpen(false)} />
             ) : null}
@@ -711,7 +1147,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                     key={item.id}
                     type="button"
                     onClick={() => {
-                    setActivePage(item.id as 'overview' | 'users' | 'departments' | 'students' | 'teachers' | 'exam-cell' | 'fees' | 'profile');                      setQuickActionsOpen(false);
+                    setActivePage(item.id as 'overview' | 'users' | 'create-users' | 'departments' | 'students' | 'teachers' | 'exam-cell' | 'fees' | 'syllabus' | 'profile');                      setSelectedRegulation(null);                      setQuickActionsOpen(false);
                       setMobileNavOpen(false); // NEW: close drawer after picking a page
                     }}
                     className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${
@@ -722,7 +1158,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                   >
                     <span>{item.label}</span>
                     <span className="rounded-full border border-current/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em]">
-                    {item.id === 'overview' ? 'Home' : item.id === 'users' ? 'Team' : item.id === 'departments' ? 'Dept' : item.id === 'profile' ? 'Info' : item.id === 'students' ? 'Stu' : item.id === 'teachers' ? 'Fac' : item.id === 'exam-cell' ? 'Exam' : 'Fees'}                    </span>
+                    {item.id === 'overview' ? 'Home' : item.id === 'users' ? 'Team' : item.id === 'create-users' ? 'New' : item.id === 'departments' ? 'Dept' : item.id === 'profile' ? 'Info' : item.id === 'students' ? 'Stu' : item.id === 'teachers' ? 'Fac' : item.id === 'exam-cell' ? 'Exam' : item.id === 'syllabus' ? 'Syl' : 'Fees'}                    </span>
                   </button>
                 ))}
               </nav>
@@ -880,12 +1316,26 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                       </div>
                     </div>
                   </div>
-                ) : activePage === 'users' && (user.role === 'SUPER_ADMIN' || user.role === 'CHAIRMAN') ? (
+                ) : activePage === 'create-users' && (user.role === 'SUPER_ADMIN' || user.role === 'CHAIRMAN') ? (
                   <div className="space-y-6">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Administration</p>
+                        <h3 className={`mt-2 text-2xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>Create Users</h3>
+                        <p className={`${isDark ? 'text-slate-400' : 'text-slate-500'} text-sm`}>
+                          Register a new account. The account appears in the Users list once created.
+                        </p>
+                      </div>
+                      <button type="button" onClick={() => setActivePage('users')} className={`${isDark ? 'border-slate-700 text-slate-200' : 'border-slate-200 text-slate-700'} inline-flex shrink-0 items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium`}>
+                        <ArrowLeft className="h-4 w-4" />
+                        Back to Users
+                      </button>
+                    </div>
+
                     <div className={`${isDark ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-white'} rounded-2xl border p-6 shadow-sm`}>
                       <div className="mb-4 flex items-center justify-between gap-3">
                         <div>
-                          <h3 className={`text-xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>Create User</h3>
+                          <h3 className={`text-xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>User details</h3>
                           <p className={`${isDark ? 'text-slate-400' : 'text-slate-500'} text-sm`}>
                             Allowed roles: {user.role === 'SUPER_ADMIN' ? 'Admin, Chairman, Exam Cell, Teacher, Student' : 'Admin, Exam Cell, Teacher, Student'}
                           </p>
@@ -909,9 +1359,13 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Last name</label>
                           <input required value={createUserForm.lastName} onChange={(e) => setCreateUserForm((current) => ({ ...current, lastName: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
                         </div>
-                        <div className="md:col-span-2">
+                        <div>
                           <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Email</label>
                           <input required type="email" value={createUserForm.email} onChange={(e) => setCreateUserForm((current) => ({ ...current, email: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                        </div>
+                        <div>
+                          <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Phone number</label>
+                          <input required type="tel" value={createUserForm.phoneNumber} onChange={(e) => setCreateUserForm((c) => ({ ...c, phoneNumber: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
                         </div>
                         <div>
                           <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Gender</label>
@@ -933,10 +1387,6 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                         <div>
                           <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Profile picture</label>
                           <input required key={fileInputResetKey} type="file" accept="image/*" onChange={(e) => setProfilePhotoFile(e.target.files?.[0] ?? null)} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-2.5 outline-none file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-white`} />
-                        </div>
-                        <div>
-                          <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Phone number</label>
-                          <input required type="tel" value={createUserForm.phoneNumber} onChange={(e) => setCreateUserForm((c) => ({ ...c, phoneNumber: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
                         </div>
                         <div>
                           <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Date of birth</label>
@@ -998,8 +1448,53 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                             ))}
                           </select>
                         </div>
+                        {['TEACHER', 'STUDENT'].includes(createUserForm.role) ? (
+                          <>
+                            <div>
+                              <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Course</label>
+                              <select value={createUserForm.courseId} onChange={(e) => setCreateUserForm((c) => ({ ...c, courseId: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                                <option value="">Select course</option>
+                                {courseList.map((course) => (
+                                  <option key={course.id} value={course.id}>{course.code} — {course.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Department</label>
+                              <select value={createUserForm.departmentId} onChange={(e) => setCreateUserForm((c) => ({ ...c, departmentId: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                                <option value="">Select department</option>
+                                {departmentList.map((dept) => (
+                                  <option key={dept.id} value={dept.id}>{dept.code} — {dept.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </>
+                        ) : null}
                         {['TEACHER', 'EXAM_CELL', 'ADMIN'].includes(createUserForm.role) ? (
                           <>
+                            <div>
+                              <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Marital Status</label>
+                              <select value={createUserForm.maritalStatus} onChange={(e) => setCreateUserForm((c) => ({ ...c, maritalStatus: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                                <option value="">Select marital status</option>
+                                <option value="SINGLE">Single</option>
+                                <option value="MARRIED">Married</option>
+                                <option value="DIVORCED">Divorced</option>
+                                <option value="WIDOWED">Widowed</option>
+                              </select>
+                            </div>
+                            <div></div>
+                            {createUserForm.maritalStatus === 'MARRIED' && (
+                              <>
+                                <div>
+                                  <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Partner Name</label>
+                                  <input type="text" value={createUserForm.partnerName} onChange={(e) => setCreateUserForm((c) => ({ ...c, partnerName: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                                </div>
+                                <div>
+                                  <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Partner Occupation</label>
+                                  <input type="text" value={createUserForm.partnerOccupation} onChange={(e) => setCreateUserForm((c) => ({ ...c, partnerOccupation: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                                </div>
+                              </>
+                            )}
                             <div>
                               <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Salary</label>
                               <input required type="number" min="0" step="0.01" value={createUserForm.salary} onChange={(e) => setCreateUserForm((c) => ({ ...c, salary: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
@@ -1007,6 +1502,67 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                             <div>
                               <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Years of experience</label>
                               <input required type="number" min="0" value={createUserForm.yearsOfExperience} onChange={(e) => setCreateUserForm((c) => ({ ...c, yearsOfExperience: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                            </div>
+                          </>
+                        ) : null}
+                        {createUserForm.role === 'STUDENT' ? (
+                          <>
+                            <div>
+                              <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Roll number</label>
+                              <input type="text" placeholder="Unique roll number" value={createUserForm.rollNumber} onChange={(e) => setCreateUserForm((c) => ({ ...c, rollNumber: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                            </div>
+                            <div>
+                              <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Regular</label>
+                              <select value={createUserForm.isRegular} onChange={(e) => setCreateUserForm((c) => ({ ...c, isRegular: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                                <option value="">Select</option>
+                                <option value="Regular">Regular</option>
+                                <option value="Irregular">Irregular</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Regulation</label>
+                              <select value={createUserForm.regulationId} onChange={(e) => setCreateUserForm((c) => ({ ...c, regulationId: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                                <option value="">Select regulation</option>
+                                {regulations.map((reg) => (
+                                  <option key={reg.id} value={reg.id}>{reg.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Father name</label>
+                              <input type="text" value={createUserForm.fatherName} onChange={(e) => setCreateUserForm((c) => ({ ...c, fatherName: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                            </div>
+                            <div>
+                              <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Father occupation</label>
+                              <input type="text" value={createUserForm.fatherOccupation} onChange={(e) => setCreateUserForm((c) => ({ ...c, fatherOccupation: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                            </div>
+                            <div>
+                              <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Mother name</label>
+                              <input type="text" value={createUserForm.motherName} onChange={(e) => setCreateUserForm((c) => ({ ...c, motherName: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                            </div>
+                            <div>
+                              <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Mother occupation</label>
+                              <input type="text" value={createUserForm.motherOccupation} onChange={(e) => setCreateUserForm((c) => ({ ...c, motherOccupation: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                            </div>
+                            {createUserForm.fatherName === '' && createUserForm.motherName === '' ? (
+                              <>
+                                <div>
+                                  <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Guardian name</label>
+                                  <input type="text" value={createUserForm.guardianName} onChange={(e) => setCreateUserForm((c) => ({ ...c, guardianName: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                                </div>
+                                <div>
+                                  <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Guardian occupation</label>
+                                  <input type="text" value={createUserForm.guardianOccupation} onChange={(e) => setCreateUserForm((c) => ({ ...c, guardianOccupation: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                                </div>
+                              </>
+                            ) : null}
+                            <div>
+                              <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Identification mark 1 (e.g. mole)</label>
+                              <input type="text" value={createUserForm.identificationMark1} onChange={(e) => setCreateUserForm((c) => ({ ...c, identificationMark1: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                            </div>
+                            <div>
+                              <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Identification mark 2</label>
+                              <input type="text" value={createUserForm.identificationMark2} onChange={(e) => setCreateUserForm((c) => ({ ...c, identificationMark2: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
                             </div>
                           </>
                         ) : null}
@@ -1020,13 +1576,46 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                         </div>
                       </form>
                     </div>
-
+                  </div>
+                ) : activePage === 'users' && (user.role === 'SUPER_ADMIN' || user.role === 'CHAIRMAN') ? (
+                  <div className="space-y-6">
                     <div className={`${isDark ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-white'} rounded-2xl border p-6 shadow-sm`}>
                       <div className="mb-4 flex items-center justify-between">
-                        <h3 className={`text-xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>Users</h3>
-                        <button type="button" onClick={() => fetchUsers()} className={`${isDark ? 'border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'} rounded-xl border px-3 py-2 text-sm font-medium`}>
-                          Refresh
-                        </button>
+                        <div>
+                          <h3 className={`text-xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>Users</h3>
+                          <p className={`${isDark ? 'text-slate-400' : 'text-slate-500'} text-sm`}>
+                            All registered accounts, grouped by role. Create new ones from the Create Users page.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={() => fetchUsers()} className={`${isDark ? 'border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'} rounded-xl border px-3 py-2 text-sm font-medium`}>
+                            Refresh
+                          </button>
+                          <button type="button" onClick={() => setActivePage('create-users')} className="flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-white transition hover:bg-primary/90">
+                            <Plus className="h-4 w-4" />
+                            Add User
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mb-4 flex flex-wrap gap-2">
+                        {usersRoleTabs.map((tab) => (
+                          <button
+                            key={tab.value}
+                            type="button"
+                            onClick={() => setUsersRoleFilter(tab.value)}
+                            className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium transition ${
+                              usersRoleFilter === tab.value
+                                ? isDark ? 'bg-slate-800 text-white shadow-sm' : 'bg-slate-900 text-white shadow-sm'
+                                : isDark ? 'bg-slate-900/40 text-slate-300 hover:bg-slate-800' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            <span>{tab.label}</span>
+                            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${usersRoleFilter === tab.value ? 'bg-white/20 text-white' : isDark ? 'bg-slate-700/60 text-slate-300' : 'bg-white text-slate-500'}`}>
+                              {tab.count}
+                            </span>
+                          </button>
+                        ))}
                       </div>
 
                       {deleteError ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{deleteError}</div> : null}
@@ -1034,7 +1623,12 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
 
                       {usersLoading ? <div className={isDark ? 'text-slate-400' : 'text-slate-500'}>Loading users...</div> : users.length === 0 ? <div className={isDark ? 'text-slate-400' : 'text-slate-500'}>No users found.</div> : (
                         <div className="space-y-6">
-                          {Object.entries(roleGroups).map(([roleName, roleUsers]) => (
+                          {displayedRoleGroups.length === 0 ? (
+                            <div className={`rounded-xl border border-dashed px-4 py-10 text-center text-sm ${isDark ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
+                              No {usersRoleTabs.find((t) => t.value === usersRoleFilter)?.label.toLowerCase() ?? 'users'} users found.
+                            </div>
+                          ) : null}
+                          {displayedRoleGroups.map(([roleName, roleUsers]) => (
                             <div key={roleName} className={`${isDark ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-slate-50'} rounded-xl border`}>
                               <div className={`${isDark ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-slate-100'} border-b px-4 py-3`}>
                                 <h4 className={`text-sm font-semibold uppercase tracking-[0.2em] ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{roleName}</h4>
@@ -1094,64 +1688,58 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Administration</p>
-                          <h3 className={`mt-2 text-2xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>Department Management</h3>
+                          <h3 className={`mt-2 text-2xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>Course Management</h3>
+                          <p className={`${isDark ? 'text-slate-400' : 'text-slate-500'} text-sm`}>Manage courses and the departments assigned to each course.</p>
                         </div>
                         <button
                           type="button"
-                          onClick={() => { setAddDepartmentForm({ code: '', name: '' }); setAddDepartmentError(''); setIsAddDepartmentOpen(true); }}
+                          onClick={openAddCourse}
                           className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:bg-primary/90"
                         >
                           <Plus className="h-4 w-4" />
-                          Add Department
+                          Add Course
                         </button>
                       </div>
 
                       {departmentError ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{departmentError}</div> : null}
                       {departmentSuccess ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{departmentSuccess}</div> : null}
 
-                      {departmentsLoading ? (
-                        <div className={isDark ? 'text-slate-400' : 'text-slate-500'}>Loading departments...</div>
-                      ) : departmentList.length === 0 ? (
-                        <div className={isDark ? 'text-slate-400' : 'text-slate-500'}>No departments yet. Click "Add Department" to create one.</div>
+                      {coursesLoading ? (
+                        <div className={isDark ? 'text-slate-400' : 'text-slate-500'}>Loading courses...</div>
+                      ) : courseList.length === 0 ? (
+                        <div className={isDark ? 'text-slate-400' : 'text-slate-500'}>No courses yet. Click "Add Course" to create one.</div>
                       ) : (
                         <div className="space-y-4">
-                          {departmentList.map((dept, index) => {
-                            const isExpanded = !!expandedDepartments[dept.id];
+                          {courseList.map((course, index) => {
+                            const isExpanded = !!expandedCourses[course.id];
                             return (
-                              <div key={dept.id} className={`${isDark ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-white'} overflow-hidden rounded-2xl border shadow-sm`}>
+                              <div key={course.id} className={`${isDark ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-white'} overflow-hidden rounded-2xl border shadow-sm`}>
                                 <div className="flex w-full items-center justify-between gap-3 px-6 py-4">
                                   <button
                                     type="button"
-                                    onClick={() => setExpandedDepartments((current) => ({ ...current, [dept.id]: !current[dept.id] }))}
+                                    onClick={() => setExpandedCourses((current) => ({ ...current, [course.id]: !current[course.id] }))}
                                     className="flex flex-1 items-center gap-3 text-left"
                                   >
                                     <span className={`${isDark ? 'text-slate-500' : 'text-slate-400'} text-sm font-medium`}>{index + 1}.</span>
-                                    <span className={`${isDark ? 'text-slate-500' : 'text-slate-400'} rounded-lg border px-2 py-0.5 text-xs font-semibold uppercase tracking-wide`}>{dept.code}</span>
-                                    <span className={`font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>{dept.name}</span>
-                                    <span className={`${isDark ? 'text-slate-400' : 'text-slate-500'} text-xs`}>{dept.courses.length} Course{dept.courses.length === 1 ? '' : 's'}</span>
+                                    <span className={`${isDark ? 'text-slate-500' : 'text-slate-400'} rounded-lg border px-2 py-0.5 text-xs font-semibold uppercase tracking-wide`}>{course.code}</span>
+                                    <span className={`font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>{course.name}</span>
+                                    <span className={`${isDark ? 'text-slate-400' : 'text-slate-500'} text-xs`}>{course.duration} {course.duration === 1 ? 'Year' : 'Years'}</span>
+                                    <span className={`${isDark ? 'text-slate-400' : 'text-slate-500'} text-xs`}>{course.departments.length} Department{course.departments.length === 1 ? '' : 's'}</span>
                                   </button>
 
                                   <div className="flex items-center gap-1.5">
                                     <button
                                       type="button"
-                                      onClick={(e) => { e.stopPropagation(); openEditDepartment(dept); }}
-                                      className={`${isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'} rounded-lg p-1.5`}
-                                      aria-label={`Edit ${dept.name}`}
-                                    >
-                                      <Pencil className="h-4 w-4" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => { e.stopPropagation(); handleDeleteDepartment(dept); }}
-                                      disabled={deletingDepartmentId === dept.id}
+                                      onClick={(e) => { e.stopPropagation(); handleDeleteCourse(course); }}
+                                      disabled={deletingCourseId === course.id}
                                       className="rounded-lg p-1.5 text-red-500 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-60"
-                                      aria-label={`Delete ${dept.name}`}
+                                      aria-label={`Delete ${course.name}`}
                                     >
                                       <Trash2 className="h-4 w-4" />
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() => setExpandedDepartments((current) => ({ ...current, [dept.id]: !current[dept.id] }))}
+                                      onClick={() => setExpandedCourses((current) => ({ ...current, [course.id]: !current[course.id] }))}
                                       className={isDark ? 'p-1.5 text-slate-400' : 'p-1.5 text-slate-500'}
                                       aria-label={isExpanded ? 'Collapse' : 'Expand'}
                                     >
@@ -1162,25 +1750,24 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
 
                                 {isExpanded ? (
                                   <div className={`${isDark ? 'border-slate-800' : 'border-slate-200'} border-t px-6 py-4`}>
-                                    <p className={`mb-3 text-xs font-semibold uppercase tracking-[0.2em] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Courses</p>
-                                    {dept.courses.length === 0 ? (
-                                      <p className={`mb-4 text-sm ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>No courses added yet.</p>
+                                    <p className={`mb-3 text-xs font-semibold uppercase tracking-[0.2em] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Departments</p>
+                                    {course.departments.length === 0 ? (
+                                      <p className={`mb-4 text-sm ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>No departments assigned yet.</p>
                                     ) : (
                                       <ul className="mb-4 space-y-2">
-                                        {dept.courses.map((course) => (
-                                          <li key={course.id} className={`${isDark ? 'border-slate-800 bg-slate-900/50' : 'border-slate-100 bg-slate-50'} flex items-center justify-between gap-3 rounded-xl border px-4 py-2`}>
+                                        {course.departments.map((dept) => (
+                                          <li key={dept.id} className={`${isDark ? 'border-slate-800 bg-slate-900/50' : 'border-slate-100 bg-slate-50'} flex items-center justify-between gap-3 rounded-xl border px-4 py-2`}>
                                             <div className="flex min-w-0 items-center gap-3">
-                                              <span className={`${isDark ? 'text-slate-500' : 'text-slate-400'} rounded-md border px-2 py-0.5 text-xs font-semibold uppercase tracking-wide`}>{course.code}</span>
-                                              <span className={`truncate text-sm ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{course.name}</span>
-                                              <span className={`shrink-0 text-xs ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>{course.duration} {course.duration === 1 ? 'Year' : 'Years'}</span>
+                                              <span className={`${isDark ? 'text-slate-500' : 'text-slate-400'} rounded-md border px-2 py-0.5 text-xs font-semibold uppercase tracking-wide`}>{dept.code}</span>
+                                              <span className={`truncate text-sm ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{dept.name}</span>
                                             </div>
                                             <button
                                               type="button"
-                                              onClick={() => handleRemoveCourse(dept.id, course.id)}
-                                              disabled={removingCourseKey === course.id}
+                                              onClick={() => handleRemoveDepartment(course.id, dept.id)}
+                                              disabled={removingDepartmentKey === `${course.id}:${dept.id}`}
                                               className="shrink-0 text-xs font-semibold text-red-600 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                                             >
-                                              {removingCourseKey === course.id ? 'Removing...' : 'Remove'}
+                                              {removingDepartmentKey === `${course.id}:${dept.id}` ? 'Removing...' : 'Remove'}
                                             </button>
                                           </li>
                                         ))}
@@ -1189,11 +1776,11 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                                     <div className="flex justify-end">
                                       <button
                                         type="button"
-                                        onClick={() => openAddCourse(dept)}
+                                        onClick={() => openAddDepartment(course)}
                                         className={`${isDark ? 'border-slate-700 text-slate-200 hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-50'} flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium`}
                                       >
                                         <Plus className="h-4 w-4" />
-                                        Add Course
+                                        Assign Department
                                       </button>
                                     </div>
                                   </div>
@@ -1203,6 +1790,61 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           })}
                         </div>
                       )}
+
+                      <div className={`${isDark ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-white'} overflow-hidden rounded-2xl border shadow-sm`}>
+                        <div className="flex w-full items-center justify-between gap-3 px-6 py-4">
+                          <div>
+                            <h4 className={`font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>Manage Departments</h4>
+                            <p className={`${isDark ? 'text-slate-400' : 'text-slate-500'} text-xs`}>Create and edit the departments you can assign to courses.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => { setAddDepartmentForm({ code: '', name: '' }); setAddDepartmentError(''); setIsAddDepartmentOpen(true); }}
+                            className={`${isDark ? 'border-slate-700 text-slate-200 hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-50'} flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium`}
+                          >
+                            <Plus className="h-4 w-4" />
+                            Add Department
+                          </button>
+                        </div>
+                        <div className={`${isDark ? 'border-slate-800' : 'border-slate-200'} border-t px-6 py-4`}>
+                          {departmentsLoading ? (
+                            <div className={isDark ? 'text-slate-400' : 'text-slate-500'}>Loading departments...</div>
+                          ) : departmentList.length === 0 ? (
+                            <div className={isDark ? 'text-slate-400' : 'text-slate-500'}>No departments yet. Create one so you can assign it to a course.</div>
+                          ) : (
+                            <ul className="space-y-2">
+                              {departmentList.map((dept, index) => (
+                                <li key={dept.id} className={`${isDark ? 'border-slate-800 bg-slate-900/50' : 'border-slate-100 bg-slate-50'} flex items-center justify-between gap-3 rounded-xl border px-4 py-2`}>
+                                  <div className="flex min-w-0 items-center gap-3">
+                                    <span className={`${isDark ? 'text-slate-500' : 'text-slate-400'} text-sm font-medium`}>{index + 1}.</span>
+                                    <span className={`${isDark ? 'text-slate-500' : 'text-slate-400'} rounded-md border px-2 py-0.5 text-xs font-semibold uppercase tracking-wide`}>{dept.code}</span>
+                                    <span className={`truncate text-sm ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{dept.name}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditDepartment(dept)}
+                                      className={`${isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'} rounded-lg p-1.5`}
+                                      aria-label={`Edit ${dept.name}`}
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteDepartment(dept)}
+                                      disabled={deletingDepartmentId === dept.id}
+                                      className="rounded-lg p-1.5 text-red-500 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                      aria-label={`Delete ${dept.name}`}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   ) : activePage === 'edit-user' ? (
                     <div className="space-y-6">
@@ -1253,6 +1895,154 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                               <option value="inactive">Inactive</option>
                             </select>
                           </div>
+                          <div>
+                            <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Phone number</label>
+                            <input required type="tel" value={editUserForm.phoneNumber} onChange={(e) => setEditUserForm((c) => ({ ...c, phoneNumber: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                          </div>
+                          <div>
+                            <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Gender</label>
+                            <select value={editUserForm.gender} onChange={(e) => setEditUserForm((c) => ({ ...c, gender: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                              <option value="">Select Gender</option>
+                              <option value="MALE">Male</option>
+                              <option value="FEMALE">Female</option>
+                              <option value="OTHER">Other</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Religion</label>
+                            <input value={editUserForm.religion} onChange={(e) => setEditUserForm((c) => ({ ...c, religion: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Address</label>
+                            <input value={editUserForm.address} onChange={(e) => setEditUserForm((c) => ({ ...c, address: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                          </div>
+                          <div>
+                            <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Date of birth</label>
+                            <input type="date" value={editUserForm.dob} onChange={(e) => setEditUserForm((c) => ({ ...c, dob: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                          </div>
+                          <div>
+                            <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Joining date</label>
+                            <input type="date" value={editUserForm.joiningDate} onChange={(e) => setEditUserForm((c) => ({ ...c, joiningDate: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                          </div>
+
+                          {['TEACHER', 'STUDENT'].includes(editUserForm.role) ? (
+                            <>
+                              <div>
+                                <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Course</label>
+                                <select value={editUserForm.courseId} onChange={(e) => setEditUserForm((c) => ({ ...c, courseId: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                                  <option value="">Select course</option>
+                                  {courseList.map((course) => (
+                                    <option key={course.id} value={course.id}>{course.code} — {course.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Department</label>
+                                <select value={editUserForm.departmentId} onChange={(e) => setEditUserForm((c) => ({ ...c, departmentId: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                                  <option value="">Select department</option>
+                                  {departmentList.map((dept) => (
+                                    <option key={dept.id} value={dept.id}>{dept.code} — {dept.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </>
+                          ) : null}
+                          {['TEACHER', 'EXAM_CELL', 'ADMIN'].includes(editUserForm.role) ? (
+                            <>
+                              <div>
+                                <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Marital Status</label>
+                                <select value={editUserForm.maritalStatus} onChange={(e) => setEditUserForm((c) => ({ ...c, maritalStatus: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                                  <option value="">Select marital status</option>
+                                  <option value="SINGLE">Single</option>
+                                  <option value="MARRIED">Married</option>
+                                  <option value="DIVORCED">Divorced</option>
+                                  <option value="WIDOWED">Widowed</option>
+                                </select>
+                              </div>
+                              <div></div>
+                              {editUserForm.maritalStatus === 'MARRIED' && (
+                                <>
+                                  <div>
+                                    <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Partner Name</label>
+                                    <input type="text" value={editUserForm.partnerName} onChange={(e) => setEditUserForm((c) => ({ ...c, partnerName: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                                  </div>
+                                  <div>
+                                    <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Partner Occupation</label>
+                                    <input type="text" value={editUserForm.partnerOccupation} onChange={(e) => setEditUserForm((c) => ({ ...c, partnerOccupation: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                                  </div>
+                                </>
+                              )}
+                              <div>
+                                <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Salary</label>
+                                <input type="number" min="0" step="0.01" value={editUserForm.salary} onChange={(e) => setEditUserForm((c) => ({ ...c, salary: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                              </div>
+                              <div>
+                                <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Years of experience</label>
+                                <input type="number" min="0" value={editUserForm.yearsOfExperience} onChange={(e) => setEditUserForm((c) => ({ ...c, yearsOfExperience: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                              </div>
+                            </>
+                          ) : null}
+                          {editUserForm.role === 'STUDENT' ? (
+                            <>
+                              <div>
+                                <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Regulation</label>
+                                <select value={editUserForm.regulationId} onChange={(e) => setEditUserForm((c) => ({ ...c, regulationId: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                                  <option value="">Select regulation</option>
+                                  {regulations.map((reg) => (
+                                    <option key={reg.id} value={reg.id}>{reg.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Roll number</label>
+                                <input type="text" placeholder="Unique roll number" value={editUserForm.rollNumber} onChange={(e) => setEditUserForm((c) => ({ ...c, rollNumber: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                              </div>
+                              <div>
+                                <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Regular</label>
+                                <select value={editUserForm.isRegular} onChange={(e) => setEditUserForm((c) => ({ ...c, isRegular: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                                  <option value="">Select</option>
+                                  <option value="Regular">Regular</option>
+                                  <option value="Irregular">Irregular</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Father name</label>
+                                <input type="text" value={editUserForm.fatherName} onChange={(e) => setEditUserForm((c) => ({ ...c, fatherName: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                              </div>
+                              <div>
+                                <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Father occupation</label>
+                                <input type="text" value={editUserForm.fatherOccupation} onChange={(e) => setEditUserForm((c) => ({ ...c, fatherOccupation: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                              </div>
+                              <div>
+                                <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Mother name</label>
+                                <input type="text" value={editUserForm.motherName} onChange={(e) => setEditUserForm((c) => ({ ...c, motherName: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                              </div>
+                              <div>
+                                <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Mother occupation</label>
+                                <input type="text" value={editUserForm.motherOccupation} onChange={(e) => setEditUserForm((c) => ({ ...c, motherOccupation: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                              </div>
+                              {editUserForm.fatherName === '' && editUserForm.motherName === '' ? (
+                                <>
+                                  <div>
+                                    <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Guardian name</label>
+                                    <input type="text" value={editUserForm.guardianName} onChange={(e) => setEditUserForm((c) => ({ ...c, guardianName: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                                  </div>
+                                  <div>
+                                    <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Guardian occupation</label>
+                                    <input type="text" value={editUserForm.guardianOccupation} onChange={(e) => setEditUserForm((c) => ({ ...c, guardianOccupation: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                                  </div>
+                                </>
+                              ) : null}
+                              <div>
+                                <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Identification mark 1 (e.g. mole)</label>
+                                <input type="text" value={editUserForm.identificationMark1} onChange={(e) => setEditUserForm((c) => ({ ...c, identificationMark1: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                              </div>
+                              <div>
+                                <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Identification mark 2</label>
+                                <input type="text" value={editUserForm.identificationMark2} onChange={(e) => setEditUserForm((c) => ({ ...c, identificationMark2: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                              </div>
+                            </>
+                          ) : null}
 
                           {editUserError ? <div className="md:col-span-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{editUserError}</div> : null}
 
@@ -1306,12 +2096,42 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Address</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.address || '—'}</dd></div>
                           {['TEACHER', 'EXAM_CELL', 'ADMIN'].includes(viewUser.role) ? (
                             <>
+                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Marital status</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.maritalStatus ? viewUser.maritalStatus.charAt(0) + viewUser.maritalStatus.slice(1).toLowerCase() : '—'}</dd></div>
+                              {viewUser.maritalStatus === 'MARRIED' && (
+                                <>
+                                  <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Partner name</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.partnerName || '—'}</dd></div>
+                                  <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Partner occupation</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.partnerOccupation || '—'}</dd></div>
+                                </>
+                              )}
                               <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Years of experience</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.yearsOfExperience ?? '—'}</dd></div>
                               <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Salary</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.salary != null ? `$${viewUser.salary.toLocaleString()}` : '—'}</dd></div>
                             </>
                           ) : null}
                           {viewUser.role === 'TEACHER' ? (
-                            <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Department</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.department || 'Not assigned'}</dd></div>
+                            <>
+                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Course</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.course || 'Not assigned'}</dd></div>
+                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Department</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.department || 'Not assigned'}</dd></div>
+                            </>
+                          ) : null}
+                          {viewUser.role === 'STUDENT' ? (
+                            <>
+                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Roll number</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.rollNumber || '—'}</dd></div>
+                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Regular</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.isRegular === null ? '—' : viewUser.isRegular ? 'Regular' : 'Irregular'}</dd></div>
+                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Course</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.course || 'Not assigned'}</dd></div>
+                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Department</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.department || 'Not assigned'}</dd></div>
+                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Father name</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.fatherName || '—'}</dd></div>
+                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Father occupation</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.fatherOccupation || '—'}</dd></div>
+                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Mother name</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.motherName || '—'}</dd></div>
+                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Mother occupation</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.motherOccupation || '—'}</dd></div>
+                              {!viewUser.fatherName && !viewUser.motherName ? (
+                                <>
+                                  <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Guardian name</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.guardianName || '—'}</dd></div>
+                                  <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Guardian occupation</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.guardianOccupation || '—'}</dd></div>
+                                </>
+                              ) : null}
+                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Identification mark 1</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.identificationMark1 || '—'}</dd></div>
+                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Identification mark 2</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.identificationMark2 || '—'}</dd></div>
+                            </>
                           ) : null}
                         </dl>
                         {viewUser.documentUrls.length > 0 ? (
@@ -1479,6 +2299,8 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           <thead>
                             <tr className={isDark ? 'border-b border-slate-700 text-slate-400' : 'border-b border-slate-200 text-slate-500'}>
                               <th className="px-3 py-2 font-medium">Name</th>
+                              <th className="px-3 py-2 font-medium">Roll number</th>
+                              <th className="px-3 py-2 font-medium">Regular</th>
                               <th className="px-3 py-2 font-medium">Username</th>
                               <th className="px-3 py-2 font-medium">College ID</th>
                               <th className="px-3 py-2 font-medium">Email</th>
@@ -1491,6 +2313,8 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                               .map((entry) => (
                                 <tr key={entry.id} className={isDark ? 'border-b border-slate-700' : 'border-b border-slate-100'}>
                                   <td className="px-3 py-3">{entry.firstName} {entry.lastName}</td>
+                                  <td className="px-3 py-3">{entry.rollNumber || '—'}</td>
+                                  <td className="px-3 py-3">{entry.isRegular === null ? '—' : entry.isRegular ? 'Regular' : 'Irregular'}</td>
                                   <td className="px-3 py-3">{entry.username}</td>
                                   <td className="px-3 py-3">{entry.collegeId}</td>
                                   <td className="px-3 py-3">{entry.email}</td>
@@ -1550,6 +2374,24 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                       </div>
                     )}
                   </div>
+                ) : activePage === 'syllabus' ? (
+                  <SyllabusManager
+                    regulations={regulations}
+                    regulationsLoading={regulationsLoading}
+                    selectedRegulation={selectedRegulation}
+                    onSelectRegulation={openSyllabus}
+                    onBack={() => { setSelectedRegulation(null); setSyllabusSubjects([]); }}
+                    subjects={syllabusSubjects}
+                    subjectsLoading={syllabusLoading}
+                    departments={departmentList}
+                    isDark={isDark}
+                    onLoadSubjects={loadSubjects}
+                    onSaveSubject={saveSubject}
+                    onDeleteSubject={deleteSubject}
+                    onAddRegulation={addRegulation}
+                    onDeleteRegulation={deleteRegulation}
+                    deletingSubjectId={deletingSubjectId}
+                  />
                 ) : activePage === 'exam-cell' ? (
                   <div className={`${isDark ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-slate-50'} rounded-2xl border p-6`}>
                     <div className="mb-4 flex items-center justify-between gap-3">
@@ -1594,6 +2436,21 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                       </div>
                     )}
                   </div>
+                ) : activePage === 'fees' ? (
+                  <FeesManager
+                    role={user.role}
+                    fees={fees}
+                    feesLoading={feesLoading}
+                    feesError={feesError}
+                    categories={feeCategories}
+                    students={feeStudents}
+                    isDark={isDark}
+                    onLoadFees={fetchFees}
+                    onLoadMeta={fetchFeeMeta}
+                    onAddFee={addFee}
+                    onDeleteFee={deleteFee}
+                    deletingFeeId={deletingFeeId}
+                  />
                 ) : (
                   <div className={`${isDark ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-slate-50'} rounded-2xl border p-6`}>
                     <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Department</p>
@@ -1672,17 +2529,17 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                   </div>
                 </div>
               ) : null}
-              {addCourseTarget ? (
+              {isAddCourseOpen ? (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
                   <div className={`${isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'} w-full max-w-md rounded-2xl p-6 shadow-2xl`}>
                     <div className="mb-1 flex items-center justify-between">
                       <h3 className="text-xl font-semibold">Add Course</h3>
-                      <button type="button" onClick={() => setAddCourseTarget(null)} className={isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'} aria-label="Close">
+                      <button type="button" onClick={() => setIsAddCourseOpen(false)} className={isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'} aria-label="Close">
                         <X className="h-5 w-5" />
                       </button>
                     </div>
-                    <p className={`mb-4 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{addCourseTarget.name}</p>
-                    <form className="space-y-4" onSubmit={handleAddCourse}>
+                    <p className={`mb-4 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Create a new course. You can assign departments to it afterwards.</p>
+                    <form className="space-y-4" onSubmit={handleCreateCourse}>
                       <div>
                         <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Course Code</label>
                         <input value={addCourseForm.code} onChange={(e) => setAddCourseForm((c) => ({ ...c, code: e.target.value }))} placeholder="Enter course code" className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`} />
@@ -1697,17 +2554,58 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                       </div>
                       {addCourseError ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{addCourseError}</div> : null}
                       <div className="flex justify-end gap-3">
-                        <button type="button" onClick={() => setAddCourseTarget(null)} className={`${isDark ? 'border-slate-700 text-slate-200' : 'border-slate-200 text-slate-700'} rounded-xl border px-4 py-2.5 text-sm font-medium`}>
+                        <button type="button" onClick={() => setIsAddCourseOpen(false)} className={`${isDark ? 'border-slate-700 text-slate-200' : 'border-slate-200 text-slate-700'} rounded-xl border px-4 py-2.5 text-sm font-medium`}>
                           Cancel
                         </button>
                         <button type="submit" disabled={isSavingCourse} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70">
-                          {isSavingCourse ? 'Saving...' : 'Add Course'}
+                          {isSavingCourse ? 'Saving...' : 'Create Course'}
                         </button>
                       </div>
                     </form>
-    </div>
-  </div>
-) : null}
+                  </div>
+                </div>
+              ) : null}
+              {addDepartmentTarget ? (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                  <div className={`${isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'} w-full max-w-md rounded-2xl p-6 shadow-2xl`}>
+                    <div className="mb-1 flex items-center justify-between">
+                      <h3 className="text-xl font-semibold">Add Department</h3>
+                      <button type="button" onClick={() => setAddDepartmentTarget(null)} className={isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'} aria-label="Close">
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+                    <p className={`mb-4 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Assign a department to {addDepartmentTarget.name}.</p>
+                    <form className="space-y-4" onSubmit={handleAddDepartment}>
+                      <div>
+                        <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Department</label>
+                        {departmentList.length === 0 ? (
+                          <p className={`rounded-xl border px-3 py-2.5 text-sm ${isDark ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>No departments available. Create one in "Manage Departments" first.</p>
+                        ) : (
+                          <select
+                            value={assignDepartmentForm.departmentId}
+                            onChange={(e) => setAssignDepartmentForm((c) => ({ ...c, departmentId: e.target.value }))}
+                            className={`${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'} w-full rounded-xl border px-3 py-2.5 outline-none`}
+                          >
+                            <option value="">Select a department</option>
+                            {departmentList.map((dept) => (
+                              <option key={dept.id} value={dept.id}>{dept.code} — {dept.name}</option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                      {assignDepartmentError ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{assignDepartmentError}</div> : null}
+                      <div className="flex justify-end gap-3">
+                        <button type="button" onClick={() => setAddDepartmentTarget(null)} className={`${isDark ? 'border-slate-700 text-slate-200' : 'border-slate-200 text-slate-700'} rounded-xl border px-4 py-2.5 text-sm font-medium`}>
+                          Cancel
+                        </button>
+                        <button type="submit" disabled={isSavingDepartmentAssignment || departmentList.length === 0} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-70">
+                          {isSavingDepartmentAssignment ? 'Saving...' : 'Add Department'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -1841,6 +2739,1038 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+type SyllabusManagerProps = {
+  regulations: RegulationItem[];
+  regulationsLoading: boolean;
+  selectedRegulation: RegulationItem | null;
+  onSelectRegulation: (reg: RegulationItem) => void;
+  onBack: () => void;
+  subjects: SyllabusSubject[];
+  subjectsLoading: boolean;
+  departments: DepartmentItem[];
+  isDark: boolean;
+  onLoadSubjects: (regulationId: string, departmentId?: string) => Promise<void>;
+  onSaveSubject: (payload: { subjectId?: string; departmentId: string; year: string; semester: string; code: string; name: string; credits: number }) => Promise<{ ok: boolean; message: string }>;
+  onDeleteSubject: (subject: SyllabusSubject) => Promise<{ ok: boolean; message: string }>;
+  onAddRegulation: (name: string) => Promise<{ ok: boolean; message: string }>;
+  onDeleteRegulation: (regulation: RegulationItem) => Promise<{ ok: boolean; message: string }>;
+  deletingSubjectId: string | null;
+};
+
+function SyllabusManager({
+  regulations,
+  regulationsLoading,
+  selectedRegulation,
+  onSelectRegulation,
+  onBack,
+  subjects,
+  subjectsLoading,
+  departments,
+  isDark,
+  onLoadSubjects,
+  onSaveSubject,
+  onDeleteSubject,
+  onAddRegulation,
+  onDeleteRegulation,
+  deletingSubjectId,
+}: SyllabusManagerProps) {
+  const [deptDropdownOpen, setDeptDropdownOpen] = useState(false);
+  const [deptSearch, setDeptSearch] = useState('');
+  const [form, setForm] = useState({ departmentId: '', year: '', semester: '', code: '', name: '', credits: '' });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [editingSubject, setEditingSubject] = useState<SyllabusSubject | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [formMsg, setFormMsg] = useState('');
+  const [formErr, setFormErr] = useState('');
+  const [newRegulation, setNewRegulation] = useState('');
+  const [addRegOpen, setAddRegOpen] = useState(false);
+  const [addRegErr, setAddRegErr] = useState('');
+  const [listErr, setListErr] = useState('');
+  const formCardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setDeptDropdownOpen(false);
+    setDeptSearch('');
+    setForm({ departmentId: '', year: '', semester: '', code: '', name: '', credits: '' });
+    setErrors({});
+    setEditingSubject(null);
+    setFormMsg('');
+    setFormErr('');
+    setListErr('');
+  }, [selectedRegulation?.id]);
+
+  const card = `${isDark ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-white'} rounded-2xl border p-6 shadow-sm`;
+  const inputClass = `${isDark ? 'border-slate-700 bg-slate-800 text-slate-100 placeholder:text-slate-500' : 'border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400'} w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`;
+  const labelClass = `mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`;
+  const errClass = 'mt-1.5 text-sm text-red-600';
+
+  const filteredDepts = departments.filter(
+    (d) =>
+      d.name.toLowerCase().includes(deptSearch.toLowerCase()) ||
+      d.code.toLowerCase().includes(deptSearch.toLowerCase()),
+  );
+  const selectedDept = departments.find((d) => d.id === form.departmentId);
+
+  const validate = (): boolean => {
+    const nextErrors: Record<string, string> = {};
+    if (!form.departmentId) {
+      nextErrors.departmentId = 'Please select a department.';
+    }
+    if (!form.year.trim()) {
+      nextErrors.year = 'Year is required.';
+    }
+    if (!form.semester.trim()) {
+      nextErrors.semester = 'Semester is required.';
+    }
+    if (!form.code.trim()) {
+      nextErrors.code = 'Subject code is required.';
+    } else if (/^\s*$/.test(form.code)) {
+      nextErrors.code = 'Subject code should not contain only spaces.';
+    } else {
+      const code = form.code.trim().toUpperCase();
+      const duplicate = subjects.find(
+        (s) =>
+          s.code.toUpperCase() === code &&
+          s.departmentId === form.departmentId &&
+          s.id !== editingSubject?.id,
+      );
+      if (duplicate) nextErrors.code = `Subject code "${code}" already exists for this department.`;
+    }
+    if (!form.name.trim()) {
+      nextErrors.name = 'Subject name is required.';
+    } else if (form.name.trim().length < 3) {
+      nextErrors.name = 'Subject name must be at least 3 characters.';
+    }
+    if (!form.credits.trim()) {
+      nextErrors.credits = 'Subject credit is required.';
+    } else {
+      const credits = Number(form.credits);
+      if (!Number.isFinite(credits) || credits <= 0 || !Number.isInteger(credits)) {
+        nextErrors.credits = 'Credits must be a positive whole number.';
+      }
+    }
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  const handleSelectDept = (deptId: string) => {
+    setForm((current) => ({ ...current, departmentId: deptId }));
+    setDeptDropdownOpen(false);
+    setDeptSearch('');
+    setErrors((current) => ({ ...current, departmentId: '' }));
+    if (selectedRegulation) {
+      onLoadSubjects(selectedRegulation.id, deptId || undefined);
+    }
+  };
+
+  const clearDept = () => {
+    setForm((current) => ({ ...current, departmentId: '' }));
+    setDeptSearch('');
+    setErrors((current) => ({ ...current, departmentId: '' }));
+    if (selectedRegulation) {
+      onLoadSubjects(selectedRegulation.id);
+    }
+  };
+
+  const handleSave = async () => {
+    setFormErr('');
+    setFormMsg('');
+    if (!selectedRegulation) return;
+    setErrors({});
+    if (!validate()) return;
+    setSubmitting(true);
+    const result = await onSaveSubject({
+      subjectId: editingSubject?.id,
+      departmentId: form.departmentId,
+      year: form.year.trim(),
+      semester: form.semester.trim(),
+      code: form.code.trim(),
+      name: form.name.trim(),
+      credits: Number(form.credits),
+    });
+    setSubmitting(false);
+    if (result.ok) {
+      setFormMsg(result.message);
+      const keptDepartment = form.departmentId;
+      setEditingSubject(null);
+      setForm((current) => ({ ...current, year: '', semester: '', code: '', name: '', credits: '' }));
+      setErrors({});
+      if (selectedRegulation) onLoadSubjects(selectedRegulation.id, keptDepartment || undefined);
+      window.setTimeout(() => setFormMsg(''), 3500);
+    } else {
+      setFormErr(result.message);
+    }
+  };
+
+  const handleReset = () => {
+    setForm((current) => ({ ...current, year: '', semester: '', code: '', name: '', credits: '' }));
+    setErrors({});
+    setFormErr('');
+  };
+
+  const startEdit = (subject: SyllabusSubject) => {
+    setEditingSubject(subject);
+    setForm({ departmentId: subject.departmentId, year: subject.year, semester: subject.semester, code: subject.code, name: subject.name, credits: String(subject.credits) });
+    setErrors({});
+    setFormErr('');
+    setFormMsg('');
+    if (selectedRegulation) onLoadSubjects(selectedRegulation.id, subject.departmentId);
+    formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const cancelEdit = () => {
+    setEditingSubject(null);
+    setForm((current) => ({ ...current, year: '', semester: '', code: '', name: '', credits: '' }));
+    setErrors({});
+    setFormErr('');
+  };
+
+  const handleDeleteSubject = async (subject: SyllabusSubject) => {
+    const confirmed = window.confirm(`Delete subject "${subject.code} — ${subject.name}"? This cannot be undone.`);
+    if (!confirmed) return;
+    setFormErr('');
+    const result = await onDeleteSubject(subject);
+    if (result.ok) {
+      setFormMsg(result.message);
+      window.setTimeout(() => setFormMsg(''), 3500);
+    } else {
+      setFormErr(result.message);
+    }
+  };
+
+  const handleAddRegulation = async () => {
+    const name = newRegulation.trim().toUpperCase();
+    if (!name) {
+      setAddRegErr('Regulation name is required.');
+      return;
+    }
+    if (regulations.some((reg) => reg.name.toUpperCase() === name)) {
+      setAddRegErr(`Regulation "${name}" already exists.`);
+      return;
+    }
+    setAddRegErr('');
+    const result = await onAddRegulation(name);
+    if (result.ok) {
+      setAddRegOpen(false);
+      setNewRegulation('');
+    } else {
+      setAddRegErr(result.message);
+    }
+  };
+
+  const handleDeleteRegulation = async (regulation: RegulationItem) => {
+    const confirmed = window.confirm(`Delete regulation "${regulation.name}"? This cannot be undone.`);
+    if (!confirmed) return;
+    const result = await onDeleteRegulation(regulation);
+    if (result.ok) {
+      setListErr('');
+    } else {
+      setListErr(result.message);
+    }
+  };
+
+  /* ---------------- Regulation selection view ---------------- */
+  if (!selectedRegulation) {
+    return (
+      <div className="space-y-6">
+        <div className={card}>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">Academic Framework</p>
+              <h3 className={`mt-2 text-2xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>Syllabus Management</h3>
+              <p className={`mt-2 max-w-xl text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                Choose a regulation to manage its syllabus — R20, R23, or a new one. Each regulation bundles department-wise subjects for a batch of students.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setNewRegulation(''); setAddRegErr(''); setAddRegOpen(true); }}
+              className="flex shrink-0 items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:bg-primary/90"
+            >
+              <Plus className="h-4 w-4" /> Add Regulation
+            </button>
+          </div>
+        </div>
+
+        {listErr ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{listErr}</div> : null}
+
+        {regulationsLoading ? (
+          <div className={isDark ? 'text-slate-400' : 'text-slate-500'}>Loading regulations...</div>
+        ) : regulations.length === 0 ? (
+          <div className={card}>
+            <div className={`rounded-2xl border border-dashed p-8 text-center text-sm ${isDark ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
+              {departments.length === 0 ? (
+                <FolderOpen className="mx-auto mb-3 h-8 w-8 text-slate-400" />
+              ) : (
+                <BookOpen className="mx-auto mb-3 h-8 w-8 text-slate-400" />
+              )}
+              {departments.length === 0
+                ? 'No departments are registered yet. Add departments under Courses before managing syllabi.'
+                : 'No regulations yet. Click "Add Regulation" to create the first one (e.g. R24).'}
+            </div>
+          </div>
+        ) : (
+          <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            {regulations.map((reg) => (
+              <button
+                key={reg.id}
+                type="button"
+                onClick={() => onSelectRegulation(reg)}
+                className={`group relative overflow-hidden rounded-2xl border p-6 text-left transition hover:-translate-y-0.5 hover:shadow-xl ${
+                  isDark ? 'border-slate-700 bg-slate-900 hover:bg-slate-800' : 'border-slate-200 bg-white hover:border-slate-300'
+                }`}
+              >
+                <div className="absolute -right-5 -top-5 h-20 w-20 rounded-full bg-gradient-to-br from-amber-300/30 to-amber-500/10 blur-xl" />
+                <div className="flex items-center justify-between">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300 to-amber-500 text-lg font-bold text-slate-900">
+                    {reg.name.replace(/^R/i, '')}
+                  </div>
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    onClick={(e) => { e.stopPropagation(); handleDeleteRegulation(reg); }}
+                    className={`rounded-lg border p-2 text-red-500 opacity-0 transition group-hover:opacity-100 hover:bg-red-500/10 ${isDark ? 'text-red-400' : ''}`}
+                    aria-label={`Delete ${reg.name}`}
+                  >
+                    <Trash2 className="h-5 w-5" />
+                  </span>
+                </div>
+                <div className={`mt-5 text-xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>{reg.name}</div>
+                <div className="text-sm text-slate-400">Regulation</div>
+                <div className={`mt-5 flex items-center gap-4 border-t pt-4 text-xs ${isDark ? 'border-slate-700 text-slate-400' : 'border-slate-100 text-slate-500'}`}>
+                  <span className="flex items-center gap-1.5"><BookMarked className="h-3.5 w-3.5" /> {reg.subjectCount} {reg.subjectCount === 1 ? 'subject' : 'subjects'}</span>
+                  <span className="flex items-center gap-1.5"><Layers className="h-3.5 w-3.5" /> {reg.departments} {reg.departments === 1 ? 'department' : 'departments'}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {addRegOpen ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className={`${isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'} w-full max-w-md rounded-2xl p-6 shadow-2xl`}>
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-xl font-semibold">Add Regulation</h3>
+                <button type="button" onClick={() => setAddRegOpen(false)} className={isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'} aria-label="Close">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); handleAddRegulation(); }}>
+                <div>
+                  <label className={labelClass}>Regulation Name</label>
+                  <input autoFocus value={newRegulation} onChange={(e) => setNewRegulation(e.target.value)} placeholder="e.g. R24" className={inputClass} />
+                </div>
+                {regulations.length > 0 ? (
+                  <div>
+                    <p className={`mb-1.5 text-xs uppercase tracking-[0.2em] ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Existing</p>
+                    <div>
+                      {regulations.map((reg) => (
+                        <span key={reg.id} className={`mr-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${isDark ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>{reg.name}</span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {addRegErr ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{addRegErr}</div> : null}
+                <div className="flex justify-end gap-3">
+                  <button type="button" onClick={() => setAddRegOpen(false)} className={`${isDark ? 'border-slate-700 text-slate-200' : 'border-slate-200 text-slate-700'} rounded-xl border px-4 py-2.5 text-sm font-medium`}>Cancel</button>
+                  <button type="submit" className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:bg-primary/90">Add Regulation</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  /* ---------------- Syllabus form for a selected regulation ---------------- */
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">Dashboard / Syllabus / {selectedRegulation.name}</p>
+          <h3 className={`mt-2 text-2xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>Syllabus Management</h3>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${isDark ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' : 'border-amber-300 bg-amber-50 text-amber-700'}`}>
+              <BookOpen className="h-3.5 w-3.5" /> {selectedRegulation.name} Regulation
+            </span>
+            <span className={`hidden rounded-full px-3 py-1 text-xs font-medium sm:inline-flex ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+              {selectedDept ? `Department: ${selectedDept.name}` : `${subjects.length} subject${subjects.length === 1 ? '' : 's'}`}
+            </span>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex shrink-0 items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition hover:opacity-80"
+          style={{ borderColor: isDark ? '#334155' : '#e2e8f0' }}
+        >
+          <ArrowLeft className="h-4 w-4" /> Back to Regulations
+        </button>
+      </div>
+
+      <div ref={formCardRef} className={`${card} scroll-mt-28`}>
+        <div className="flex items-center gap-2">
+          <BookOpen className={`h-5 w-5 ${isDark ? 'text-amber-400' : 'text-amber-600'}`} />
+          <h4 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+            {editingSubject ? 'Edit Subject' : 'Add Syllabus Subject'}
+          </h4>
+        </div>
+        <p className={`mt-1 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+          Select a department, then define its subjects for {selectedRegulation.name}. Subject codes must be unique within a department.
+        </p>
+
+        {editingSubject ? (
+          <div className={`mt-4 flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${isDark ? 'border-amber-500/30 bg-amber-500/10 text-amber-200' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+            <span>
+              Editing <strong>{editingSubject.code}</strong> — {editingSubject.name}
+            </span>
+            <button type="button" onClick={cancelEdit} className="shrink-0 font-medium underline">Cancel</button>
+          </div>
+        ) : null}
+
+        <div className="mt-6 space-y-4">
+          {/* Department searchable dropdown */}
+          <div>
+            <label className={labelClass}>Select Department</label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setDeptDropdownOpen((current) => !current)}
+                className={`${inputClass} flex items-center justify-between text-left`}
+              >
+                <span className={selectedDept ? '' : `${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                  {selectedDept ? `${selectedDept.name} (${selectedDept.code})` : 'Select a Department'}
+                </span>
+                <span className="flex items-center gap-1">
+                  {selectedDept ? (
+                    <span
+                      role="button"
+                      tabIndex={-1}
+                      onClick={(e) => { e.stopPropagation(); clearDept(); }}
+                      className={`rounded p-0.5 transition ${isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                      aria-label="Show all departments"
+                    >
+                      <X className="h-4 w-4" />
+                    </span>
+                  ) : null}
+                  <ChevronDown className={`h-4 w-4 transition ${deptDropdownOpen ? 'rotate-180' : ''} ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
+                </span>
+              </button>
+
+              {deptDropdownOpen ? (
+                <div className={`absolute z-30 mt-2 w-full overflow-hidden rounded-xl border shadow-2xl ${isDark ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'}`}>
+                  <div className={`flex items-center gap-2 border-b px-3 py-2 ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
+                    <Search className={`h-4 w-4 ${isDark ? 'text-slate-500' : 'text-slate-400'}`} />
+                    <input
+                      autoFocus
+                      value={deptSearch}
+                      onChange={(e) => setDeptSearch(e.target.value)}
+                      placeholder="Search departments…"
+                      className="w-full bg-transparent text-sm outline-none"
+                    />
+                  </div>
+                  <div className="max-h-56 overflow-y-auto">
+                    {departments.length === 0 ? (
+                      <div className={`px-4 py-3 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>No departments registered yet. Add them under Courses.</div>
+                    ) : filteredDepts.length === 0 ? (
+                      <div className={`px-4 py-3 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>No departments match "{deptSearch}".</div>
+                    ) : (
+                      filteredDepts.map((dept) => (
+                        <button
+                          key={dept.id}
+                          type="button"
+                          onClick={() => handleSelectDept(dept.id)}
+                          className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition ${
+                            form.departmentId === dept.id
+                              ? isDark ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-900'
+                              : isDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>{dept.name} <span className={isDark ? 'text-slate-500' : 'text-slate-400'}>({dept.code})</span></span>
+                          {form.departmentId === dept.id ? <Check className="h-4 w-4 text-amber-500" /> : null}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            {errors.departmentId ? <p className={errClass}>{errors.departmentId}</p> : null}
+          </div>
+
+          {/* Year + semester side by side */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className={labelClass}>Year</label>
+              <input value={form.year} onChange={(e) => setForm((current) => ({ ...current, year: e.target.value }))} placeholder="e.g. 1st Year" className={inputClass} />
+              {errors.year ? <p className={errClass}>{errors.year}</p> : null}
+            </div>
+            <div>
+              <label className={labelClass}>Semester</label>
+              <input value={form.semester} onChange={(e) => setForm((current) => ({ ...current, semester: e.target.value }))} placeholder="e.g. 1st Semester" className={inputClass} />
+              {errors.semester ? <p className={errClass}>{errors.semester}</p> : null}
+            </div>
+          </div>
+
+          {/* Subject code + name side by side */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className={labelClass}>Subject Code</label>
+              <input value={form.code} onChange={(e) => setForm((current) => ({ ...current, code: e.target.value }))} placeholder="Enter subject code" className={inputClass} />
+              {errors.code ? <p className={errClass}>{errors.code}</p> : null}
+            </div>
+            <div>
+              <label className={labelClass}>Subject Name</label>
+              <input value={form.name} onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))} placeholder="Enter subject name" className={inputClass} />
+              {errors.name ? <p className={errClass}>{errors.name}</p> : null}
+            </div>
+          </div>
+
+          <div>
+            <label className={labelClass}>Subject Credit</label>
+            <input value={form.credits} onChange={(e) => setForm((current) => ({ ...current, credits: e.target.value }))} placeholder="Enter credits" inputMode="numeric" className={`${inputClass} max-w-xs`} />
+            {errors.credits ? <p className={errClass}>{errors.credits}</p> : null}
+          </div>
+
+          {formErr ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{formErr}</div> : null}
+          {formMsg ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{formMsg}</div> : null}
+
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={handleReset}
+              className={`${isDark ? 'border-slate-700 text-slate-200' : 'border-slate-200 text-slate-700'} rounded-xl border px-4 py-2.5 text-sm font-medium transition hover:bg-slate-50 dark:hover:bg-slate-800`}
+            >
+              Reset
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={submitting}
+              className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              <Save className="h-4 w-4" /> {editingSubject ? 'Update Subject' : 'Save Subject'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Existing subjects table */}
+      <div className={card}>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">Existing Subjects</p>
+            <h4 className={`mt-2 text-xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>{selectedRegulation.name} — {selectedDept ? selectedDept.name : 'All Departments'}</h4>
+          </div>
+          <span className={`rounded-full px-3 py-1 text-xs font-medium ${isDark ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+            {subjects.length} {subjects.length === 1 ? 'subject' : 'subjects'}
+          </span>
+        </div>
+        {!selectedDept ? (
+          <p className={`mt-2 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Select a department above to filter subjects to it.</p>
+        ) : null}
+
+        {subjectsLoading ? (
+          <div className={`mt-6 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Loading subjects...</div>
+        ) : subjects.length === 0 ? (
+          <div className={`mt-6 rounded-2xl border border-dashed p-8 text-center text-sm ${isDark ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
+            <BookMarked className="mx-auto mb-3 h-8 w-8 text-slate-400" />
+            {selectedDept
+              ? `No subjects saved in ${selectedDept.name} yet. Use the form above to add the first one.`
+              : 'No subjects saved for this regulation yet. Select a department and add subjects using the form above.'}
+          </div>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className={`min-w-full text-left text-sm ${isDark ? 'text-slate-200' : 'text-slate-900'}`}>
+              <thead>
+                <tr className={isDark ? 'border-b border-slate-700 text-slate-400' : 'border-b border-slate-200 text-slate-500'}>
+                  <th className="px-3 py-2 font-medium">Year</th>
+                  <th className="px-3 py-2 font-medium">Semester</th>
+                  <th className="px-3 py-2 font-medium">Subject Code</th>
+                  <th className="px-3 py-2 font-medium">Subject Name</th>
+                  <th className="px-3 py-2 text-center font-medium">Credits</th>
+                  <th className="px-3 py-2 font-medium">Department</th>
+                  <th className="px-3 py-2 text-right font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {subjects.map((sub) => (
+                  <tr key={sub.id} className={isDark ? 'border-b border-slate-800' : 'border-b border-slate-100'}>
+                    <td className="px-3 py-3">{sub.year || '—'}</td>
+                    <td className="px-3 py-3">{sub.semester || '—'}</td>
+                    <td className="px-3 py-3 font-medium">{sub.code}</td>
+                    <td className="px-3 py-3">{sub.name}</td>
+                    <td className="px-3 py-3 text-center">{sub.credits}</td>
+                    <td className="px-3 py-3">{sub.department?.name ?? '—'}</td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => startEdit(sub)}
+                          className={`rounded-lg p-1.5 transition ${isDark ? 'text-slate-400 hover:bg-slate-800 hover:text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+                          aria-label={`Edit ${sub.name}`}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSubject(sub)}
+                          disabled={deletingSubjectId === sub.id}
+                          className="rounded-lg p-1.5 text-red-500 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                          aria-label={`Delete ${sub.name}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type FeesManagerProps = {
+  role: string;
+  fees: FeeItem[];
+  feesLoading: boolean;
+  feesError: string;
+  categories: FeeCategoryItem[];
+  students: FeeStudentItem[];
+  isDark: boolean;
+  onLoadFees: () => Promise<void>;
+  onLoadMeta: () => Promise<void>;
+  onAddFee: (payload: { studentId: string; categoryId: string; amount: number; dueDate?: string }) => Promise<{ ok: boolean; message: string }>;
+  onDeleteFee: (fee: FeeItem) => Promise<{ ok: boolean; message: string }>;
+  deletingFeeId: string | null;
+};
+
+function FeesManager({
+  role,
+  fees,
+  feesLoading,
+  feesError,
+  categories,
+  students,
+  isDark,
+  onLoadFees,
+  onLoadMeta,
+  onAddFee,
+  onDeleteFee,
+  deletingFeeId,
+}: FeesManagerProps) {
+  const isStaff = ['SUPER_ADMIN', 'CHAIRMAN', 'ADMIN', 'EXAM_CELL'].includes(role);
+  const [formOpen, setFormOpen] = useState(false);
+  const [form, setForm] = useState({ studentId: '', categoryId: '', amount: '', dueDate: '' });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [studentSearch, setStudentSearch] = useState('');
+  const [studentDropdownOpen, setStudentDropdownOpen] = useState(false);
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formMsg, setFormMsg] = useState('');
+  const [formErr, setFormErr] = useState('');
+  const [listMsg, setListMsg] = useState('');
+  const formCardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    onLoadFees();
+    if (isStaff) onLoadMeta();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const card = `${isDark ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-white'} rounded-2xl border p-6 shadow-sm`;
+  const inputClass = `${isDark ? 'border-slate-700 bg-slate-800 text-slate-100 placeholder:text-slate-500' : 'border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400'} w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`;
+  const labelClass = `mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`;
+  const errClass = 'mt-1.5 text-sm text-red-600';
+
+  const filteredStudents = students.filter(
+    (s) =>
+      s.name.toLowerCase().includes(studentSearch.toLowerCase()) ||
+      s.collegeId.toLowerCase().includes(studentSearch.toLowerCase()) ||
+      s.rollNumber.toLowerCase().includes(studentSearch.toLowerCase()),
+  );
+  const selectedStudent = students.find((s) => s.id === form.studentId);
+
+  const validate = (): boolean => {
+    const nextErrors: Record<string, string> = {};
+    if (!form.studentId) {
+      nextErrors.studentId = 'Please select a student.';
+    }
+    if (!form.amount.trim()) {
+      nextErrors.amount = 'Amount is required.';
+    } else {
+      const amount = Number(form.amount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        nextErrors.amount = 'Amount must be greater than 0.';
+      }
+    }
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  const handleSelectStudent = (studentId: string) => {
+    setForm((current) => ({ ...current, studentId }));
+    setStudentDropdownOpen(false);
+    setStudentSearch('');
+    setErrors((current) => ({ ...current, studentId: '' }));
+  };
+
+  const handleSelectCategory = (categoryId: string) => {
+    setForm((current) => ({ ...current, categoryId }));
+    setCategoryDropdownOpen(false);
+  };
+
+  const handleSave = async () => {
+    setFormErr('');
+    setFormMsg('');
+    setErrors({});
+    if (!validate()) return;
+    setSubmitting(true);
+    const result = await onAddFee({
+      studentId: form.studentId,
+      categoryId: form.categoryId,
+      amount: Number(form.amount),
+      ...(form.dueDate ? { dueDate: form.dueDate } : {}),
+    });
+    setSubmitting(false);
+    if (result.ok) {
+      setFormMsg(result.message);
+      setForm({ studentId: '', categoryId: '', amount: '', dueDate: '' });
+      setErrors({});
+      setFormOpen(false);
+      window.setTimeout(() => setFormMsg(''), 3500);
+    } else {
+      setFormErr(result.message);
+    }
+  };
+
+  const handleDelete = async (fee: FeeItem) => {
+    const label = fee.student ? `${fee.student.user.firstName} ${fee.student.user.lastName}`.trim() : 'this student';
+    const confirmed = window.confirm(`Delete the ${fee.category?.name ?? 'fee'} entry of ${amountFmt(fee.amount)} for ${label}? This cannot be undone.`);
+    if (!confirmed) return;
+    const result = await onDeleteFee(fee);
+    if (result.ok) {
+      setListMsg(result.message);
+      window.setTimeout(() => setListMsg(''), 3500);
+    } else {
+      setListMsg('');
+      setFormErr(result.message);
+    }
+  };
+
+  const isOverdue = (fee: FeeItem): boolean =>
+    fee.pendingAmount > 0 && !!fee.dueDate && new Date(fee.dueDate).getTime() < Date.now();
+
+  const statusBadge = (fee: FeeItem) => {
+    const status = isOverdue(fee) ? 'OVERDUE' : fee.status;
+    const tone =
+      status === 'PAID'
+        ? 'bg-emerald-100 text-emerald-700'
+        : status === 'OVERDUE'
+          ? 'bg-red-100 text-red-700'
+          : status === 'PARTIALLY_PAID'
+            ? 'bg-sky-100 text-sky-700'
+            : 'bg-amber-100 text-amber-700';
+    return <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${tone}`}>{status.replace(/_/g, ' ')}</span>;
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header + Add button */}
+      <div className={card}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${isDark ? 'bg-slate-800 text-amber-400' : 'bg-slate-100 text-amber-600'}`}>
+              <Landmark className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Fee Management</p>
+              <h4 className={`mt-1 text-xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                {isStaff ? 'Student Fee Entries' : 'My Fees'}
+              </h4>
+            </div>
+          </div>
+          {isStaff ? (
+            <button
+              type="button"
+              onClick={() => {
+                setFormOpen((current) => !current);
+                setFormErr('');
+                setFormMsg('');
+              }}
+              className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:bg-primary/90"
+            >
+              <Plus className="h-4 w-4" /> {formOpen ? 'Cancel' : 'Add Fee Entry'}
+            </button>
+          ) : null}
+        </div>
+        {isStaff ? (
+          <p className={`mt-3 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+            Create a fee entry for any student. Choose a category, set the amount, and optionally set a due date.
+          </p>
+        ) : (
+          <p className={`mt-3 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+            View the fee entries created for you. Pay at the accounts office to update the status.
+          </p>
+        )}
+      </div>
+
+      {/* Add fee entry form */}
+      {formOpen ? (
+        <div ref={formCardRef} className={card}>
+          <p className="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">New Fee Entry</p>
+          <div className="mt-5 space-y-4">
+            {/* Student searchable dropdown */}
+            <div>
+              <label className={labelClass}>Student</label>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setStudentDropdownOpen((current) => !current)}
+                  className={`${inputClass} flex items-center justify-between text-left`}
+                >
+                  <span className={selectedStudent ? '' : `${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                    {selectedStudent
+                      ? `${selectedStudent.name} (${selectedStudent.collegeId}) — ${selectedStudent.rollNumber}`
+                      : 'Select a Student'}
+                  </span>
+                  <ChevronDown className={`h-4 w-4 transition ${studentDropdownOpen ? 'rotate-180' : ''} ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
+                </button>
+                {studentDropdownOpen ? (
+                  <div className={`absolute z-30 mt-2 w-full overflow-hidden rounded-xl border shadow-2xl ${isDark ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'}`}>
+                    <div className={`flex items-center gap-2 border-b px-3 py-2 ${isDark ? 'border-slate-800' : 'border-slate-100'}`}>
+                      <Search className={`h-4 w-4 ${isDark ? 'text-slate-500' : 'text-slate-400'}`} />
+                      <input
+                        autoFocus
+                        value={studentSearch}
+                        onChange={(e) => setStudentSearch(e.target.value)}
+                        placeholder="Search name, ID or roll number…"
+                        className="w-full bg-transparent text-sm outline-none"
+                      />
+                    </div>
+                    <div className="max-h-56 overflow-y-auto">
+                      {students.length === 0 ? (
+                        <div className={`px-4 py-3 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>No students registered yet.</div>
+                      ) : filteredStudents.length === 0 ? (
+                        <div className={`px-4 py-3 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>No students match "{studentSearch}".</div>
+                      ) : (
+                        filteredStudents.map((student) => (
+                          <button
+                            key={student.id}
+                            type="button"
+                            onClick={() => handleSelectStudent(student.id)}
+                            className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition ${
+                              form.studentId === student.id
+                                ? isDark ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-900'
+                                : isDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            <span>
+                              {student.name} <span className={isDark ? 'text-slate-500' : 'text-slate-400'}>— {student.rollNumber}</span>
+                              {student.department ? <span className={`ml-1 text-xs ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>({student.department})</span> : null}
+                            </span>
+                            {form.studentId === student.id ? <Check className="h-4 w-4 text-amber-500" /> : null}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+              {errors.studentId ? <p className={errClass}>{errors.studentId}</p> : null}
+            </div>
+
+            {/* Category dropdown */}
+            <div>
+              <label className={labelClass}>Category</label>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setCategoryDropdownOpen((current) => !current)}
+                  className={`${inputClass} flex items-center justify-between text-left`}
+                >
+                  <span className={form.categoryId ? '' : `${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                    {categories.find((c) => c.id === form.categoryId)?.name ?? 'Optional — Not selected'}
+                  </span>
+                  <ChevronDown className={`h-4 w-4 transition ${categoryDropdownOpen ? 'rotate-180' : ''} ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
+                </button>
+                {categoryDropdownOpen ? (
+                  <div className={`absolute z-30 mt-2 w-full overflow-hidden rounded-xl border shadow-2xl ${isDark ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'}`}>
+                    <div className="max-h-56 overflow-y-auto">
+                      <button
+                        type="button"
+                        onClick={() => { setForm((current) => ({ ...current, categoryId: '' })); setCategoryDropdownOpen(false); }}
+                        className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition ${
+                          !form.categoryId
+                            ? isDark ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-900'
+                            : isDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span>Optional — Not selected</span>
+                        {!form.categoryId ? <Check className="h-4 w-4 text-amber-500" /> : null}
+                      </button>
+                      {categories.map((category) => (
+                        <button
+                          key={category.id}
+                          type="button"
+                          onClick={() => handleSelectCategory(category.id)}
+                          className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition ${
+                            form.categoryId === category.id
+                              ? isDark ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-900'
+                              : isDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>{category.name}</span>
+                          {form.categoryId === category.id ? <Check className="h-4 w-4 text-amber-500" /> : null}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Amount + due date */}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className={labelClass}>Amount</label>
+                <input
+                  value={form.amount}
+                  onChange={(e) => setForm((current) => ({ ...current, amount: e.target.value }))}
+                  placeholder="Enter amount"
+                  inputMode="decimal"
+                  className={inputClass}
+                />
+                {errors.amount ? <p className={errClass}>{errors.amount}</p> : null}
+              </div>
+              <div>
+                <label className={labelClass}>Due Date</label>
+                <input
+                  type="date"
+                  value={form.dueDate}
+                  onChange={(e) => setForm((current) => ({ ...current, dueDate: e.target.value }))}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+
+            {formErr ? <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{formErr}</div> : null}
+            {formMsg ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{formMsg}</div> : null}
+
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setFormOpen(false);
+                  setForm({ studentId: '', categoryId: '', amount: '', dueDate: '' });
+                  setErrors({});
+                  setFormErr('');
+                }}
+                className={`${isDark ? 'border-slate-700 text-slate-200' : 'border-slate-200 text-slate-700'} rounded-xl border px-4 py-2.5 text-sm font-medium transition hover:bg-slate-50 dark:hover:bg-slate-800`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={submitting}
+                className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                <Save className="h-4 w-4" /> {submitting ? 'Saving…' : 'Save Fee Entry'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Fee entries table */}
+      <div className={card}>
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">
+            {isStaff ? 'All Fee Entries' : 'My Fee Entries'}
+          </p>
+          <span className={`rounded-full px-3 py-1 text-xs font-medium ${isDark ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+            {fees.length} {fees.length === 1 ? 'entry' : 'entries'}
+          </span>
+        </div>
+
+        {feesError ? (
+          <div className={`mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700`}>{feesError}</div>
+        ) : null}
+        {listMsg ? <div className={`mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700`}>{listMsg}</div> : null}
+
+        {feesLoading ? (
+          <div className={`mt-6 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Loading fee entries...</div>
+        ) : fees.length === 0 ? (
+          <div className={`mt-6 rounded-2xl border border-dashed p-8 text-center text-sm ${isDark ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
+            <Landmark className="mx-auto mb-3 h-8 w-8 text-slate-400" />
+            {isStaff
+              ? 'No fee entries yet. Click "Add Fee Entry" to create the first one for a student.'
+              : 'No fee entries have been created for you yet.'}
+          </div>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className={`min-w-full text-left text-sm ${isDark ? 'text-slate-200' : 'text-slate-900'}`}>
+              <thead>
+                <tr className={isDark ? 'border-b border-slate-700 text-slate-400' : 'border-b border-slate-200 text-slate-500'}>
+                  {isStaff ? <th className="px-3 py-2 font-medium">Student</th> : null}
+                  {isStaff ? <th className="px-3 py-2 font-medium">Roll No</th> : null}
+                  <th className="px-3 py-2 font-medium">Category</th>
+                  <th className="px-3 py-2 text-right font-medium">Amount</th>
+                  <th className="px-3 py-2 text-right font-medium">Paid</th>
+                  <th className="px-3 py-2 text-right font-medium">Pending</th>
+                  <th className="px-3 py-2 font-medium">Status</th>
+                  <th className="px-3 py-2 font-medium">Due Date</th>
+                  {isStaff ? <th className="px-3 py-2 text-right font-medium">Actions</th> : null}
+                </tr>
+              </thead>
+              <tbody>
+                {fees.map((fee) => (
+                  <tr key={fee.id} className={isDark ? 'border-b border-slate-800' : 'border-b border-slate-100'}>
+                    {isStaff ? (
+                      <td className="px-3 py-3">
+                        <div className="font-medium">{fee.student ? `${fee.student.user.firstName} ${fee.student.user.lastName}`.trim() : '—'}</div>
+                        <div className={`text-xs ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>{fee.student?.user.collegeId ?? ''}</div>
+                      </td>
+                    ) : null}
+                    {isStaff ? <td className="px-3 py-3">{fee.student?.rollNumber ?? '—'}</td> : null}
+                    <td className="px-3 py-3">{fee.category ? fee.category.name : '—'}</td>
+                    <td className="px-3 py-3 text-right font-medium">{amountFmt(fee.amount)}</td>
+                    <td className="px-3 py-3 text-right">{amountFmt(fee.paidAmount)}</td>
+                    <td className="px-3 py-3 text-right">{amountFmt(fee.pendingAmount)}</td>
+                    <td className="px-3 py-3">{statusBadge(fee)}</td>
+                    <td className="px-3 py-3">{fee.dueDate ? new Date(fee.dueDate).toLocaleDateString() : '—'}</td>
+                    {isStaff ? (
+                      <td className="px-3 py-3">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(fee)}
+                            disabled={deletingFeeId === fee.id}
+                            className="rounded-lg p-1.5 text-red-500 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                            aria-label="Delete fee entry"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    ) : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
