@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { ArrowLeft, ArrowRight, BookOpen, BookMarked, Check, ChevronDown, ChevronUp, Eye, EyeOff, FolderOpen, GraduationCap, Landmark, Layers, Menu, Pencil, Plus, Save, Search, ShieldCheck, Trash2, UserCircle, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookOpen, BookMarked, CalendarDays, Check, ChevronDown, ChevronUp, Eye, EyeOff, FolderOpen, GraduationCap, Landmark, Layers, Menu, Pencil, Plus, Save, Search, ShieldCheck, Trash2, Upload, UserCircle, X } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -69,6 +69,8 @@ type SyllabusSubject = {
   departmentId: string;
   department: { id: string; code: string; name: string };
   regulation: { id: string; name: string };
+  courseId?: string | null;
+  course?: { id: string; code: string; name: string } | null;
 };
 type FeeCategoryItem = { id: string; name: string };
 type FeeStudentItem = {
@@ -100,6 +102,7 @@ const roleTitles: Record<string, string> = {
   EXAM_CELL: 'Exam Cell Dashboard',
   TEACHER: 'Teacher Dashboard',
   STUDENT: 'Student Dashboard',
+  ACCOUNTANT: 'Accountant Dashboard',
 };
 
 const roleStats: Record<string, { label: string; value: string }[]> = {
@@ -133,6 +136,11 @@ const roleStats: Record<string, { label: string; value: string }[]> = {
     { label: 'Attendance', value: '91%' },
     { label: 'Results', value: 'A+' },
   ],
+  ACCOUNTANT: [
+    { label: 'Total Fees', value: '₹4.2L' },
+    { label: 'Pending', value: '₹82K' },
+    { label: 'Collected', value: '93%' },
+  ],
 };
 
 function App() {
@@ -145,7 +153,7 @@ function App() {
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [roleGroups, setRoleGroups] = useState<Record<string, UserListItem[]>>({});
-  const [usersRoleFilter, setUsersRoleFilter] = useState('ALL'); // 'ALL' | 'SUPER_ADMIN' | 'ADMIN' | 'CHAIRMAN' | 'EXAM_CELL' | 'TEACHER' | 'STUDENT'
+  const [usersRoleFilter, setUsersRoleFilter] = useState('ALL'); // 'ALL' | 'SUPER_ADMIN' | 'ADMIN' | 'CHAIRMAN' | 'EXAM_CELL' | 'TEACHER' | 'STUDENT' | 'ACCOUNTANT'
   // const [createUserForm, setCreateUserForm] = useState({
   //   username: '',
   //   collegeId: '',
@@ -157,7 +165,7 @@ function App() {
   // });
   const [createUserForm, setCreateUserForm] = useState({
   username: '', collegeId: '', email: '', firstName: '', lastName: '', password: '',
-  role: user?.role === 'SUPER_ADMIN' ? 'ADMIN' : 'Select a Role',
+  role: 'Select a Role',
   dob: '', joiningDate: '', yearsOfExperience: '', phoneNumber: '', // NEW
   gender: '', religion: '', // NEW
   maritalStatus: '', partnerName: '', partnerOccupation: '', // NEW
@@ -224,7 +232,20 @@ function App() {
   const [feeCategories, setFeeCategories] = useState<FeeCategoryItem[]>([]);
   const [feeStudents, setFeeStudents] = useState<FeeStudentItem[]>([]);
   const [deletingFeeId, setDeletingFeeId] = useState<string | null>(null);
-  const [activePage, setActivePage] = useState<'overview' | 'users' | 'create-users' | 'departments' | 'students' | 'teachers' | 'exam-cell' | 'fees' | 'syllabus' | 'profile' | 'edit-user' | 'view-user'>('overview');  const [quickActionsOpen, setQuickActionsOpen] = useState(false);
+  // Attendance state
+  const [attendanceDate, setAttendanceDate] = useState(new Date());
+  const [attendanceRegulations, setAttendanceRegulations] = useState<{ id: string; name: string }[]>([]);
+  const [attendanceRegulationId, setAttendanceRegulationId] = useState('');
+  const [attendanceSubjectId, setAttendanceSubjectId] = useState('');
+  const [attendanceSubjects, setAttendanceSubjects] = useState<{ id: string; code: string; name: string; semester: string; regulation: { id: string; name: string }; department: { id: string; code: string; name: string } }[]>([]);
+  const [attendanceStudents, setAttendanceStudents] = useState<{ id: string; rollNumber: string; name: string; collegeId: string; department: string | null }[]>([]);
+  const [attendanceRecords, setAttendanceRecords] = useState<Record<string, boolean>>({});
+  const [attendanceMarkedDays, setAttendanceMarkedDays] = useState<number[]>([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceSaving, setAttendanceSaving] = useState(false);
+  const [attendanceMsg, setAttendanceMsg] = useState('');
+  const [attendanceErr, setAttendanceErr] = useState('');
+  const [activePage, setActivePage] = useState<'overview' | 'users' | 'create-users' | 'departments' | 'students' | 'teachers' | 'exam-cell' | 'fees' | 'syllabus' | 'attendance' | 'profile' | 'edit-user' | 'view-user'>('overview');  const [quickActionsOpen, setQuickActionsOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [mobileNavOpen, setMobileNavOpen] = useState(false); // NEW
   const [passwordForm, setPasswordForm] = useState({
@@ -359,7 +380,7 @@ function App() {
         firstName: '',
         lastName: '',
         password: '',
-        role: user?.role === 'SUPER_ADMIN' ? 'ADMIN' : 'Select a Role',
+        role: 'Select a Role',
         dob: '',
         joiningDate: '',
         yearsOfExperience: '',
@@ -498,6 +519,7 @@ function App() {
   const saveSubject = async (payload: {
     subjectId?: string;
     departmentId: string;
+    courseId: string;
     year: string;
     semester: string;
     code: string;
@@ -512,7 +534,7 @@ function App() {
       if (payload.subjectId) {
         const response = await axios.patch(
           `${API_URL}/api/syllabus/subjects/${payload.subjectId}`,
-          { departmentId: payload.departmentId, year: payload.year, semester: payload.semester, code: payload.code, name: payload.name, credits: payload.credits },
+          { departmentId: payload.departmentId, courseId: payload.courseId || undefined, year: payload.year, semester: payload.semester, code: payload.code, name: payload.name, credits: payload.credits },
           { headers },
         );
         const updated = response.data.subject as SyllabusSubject;
@@ -522,7 +544,7 @@ function App() {
       }
       const response = await axios.post(
         `${API_URL}/api/syllabus/${selectedRegulation.id}/subjects`,
-        { departmentId: payload.departmentId, year: payload.year, semester: payload.semester, code: payload.code, name: payload.name, credits: payload.credits },
+        { departmentId: payload.departmentId, courseId: payload.courseId || undefined, year: payload.year, semester: payload.semester, code: payload.code, name: payload.name, credits: payload.credits },
         { headers },
       );
       const created = response.data.subject as SyllabusSubject;
@@ -558,7 +580,7 @@ function App() {
     setFeesLoading(true);
     setFeesError('');
     try {
-      const isStaff = user && ['SUPER_ADMIN', 'CHAIRMAN', 'ADMIN', 'EXAM_CELL'].includes(user.role);
+      const isStaff = user && ['SUPER_ADMIN', 'CHAIRMAN', 'ADMIN', 'EXAM_CELL', 'ACCOUNTANT'].includes(user.role);
       const url = isStaff ? `${API_URL}/api/fees` : `${API_URL}/api/fees/me`;
       const response = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
       setFees(response.data.fees || []);
@@ -628,6 +650,136 @@ function App() {
       return { ok: false, message };
     } finally {
       setDeletingFeeId(null);
+    }
+  };
+
+  /* ------------------------------------------------------------------ */
+  /* Attendance API functions                                           */
+  /* ------------------------------------------------------------------ */
+
+  const fetchAttendanceSubjects = async (regulationId: string = attendanceRegulationId) => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token) return;
+    try {
+      // Subjects are gated by regulation — no regulation means an empty list
+      if (!regulationId) {
+        setAttendanceSubjects([]);
+        return;
+      }
+      const response = await axios.get(`${API_URL}/api/attendance/subjects`, {
+        params: { regulationId },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setAttendanceSubjects(response.data.subjects || []);
+    } catch (err) {
+      console.error('Failed to load attendance subjects', err);
+    }
+  };
+
+  const fetchAttendanceRegulations = async () => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token) return;
+    try {
+      const response = await axios.get(`${API_URL}/api/attendance/regulations`, { headers: { Authorization: `Bearer ${token}` } });
+      setAttendanceRegulations(response.data.regulations || []);
+    } catch (err) {
+      console.error('Failed to load attendance regulations', err);
+      setAttendanceRegulations([]);
+    }
+  };
+
+  const fetchAttendanceStudents = async (subjectId: string) => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token) return;
+    setAttendanceLoading(true);
+    try {
+      const response = await axios.get(`${API_URL}/api/attendance/students`, {
+        params: { subjectId },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setAttendanceStudents(response.data.students || []);
+    } catch (err) {
+      console.error('Failed to load attendance students', err);
+    } finally {
+      setAttendanceLoading(false);
+    }
+  };
+
+  const fetchAttendanceRecords = async (date: Date, subjectId: string) => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token || !subjectId) return;
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    try {
+      const response = await axios.get(`${API_URL}/api/attendance`, {
+        params: { date: dateStr, subjectId },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const records: Record<string, boolean> = {};
+      (response.data.records || []).forEach((r: { studentId: string; present: boolean }) => {
+        records[r.studentId] = r.present;
+      });
+      setAttendanceRecords(records);
+    } catch (err) {
+      console.error('Failed to load attendance records', err);
+    }
+  };
+
+  const fetchAttendanceMarkedDays = async (subjectId: string, month: number, year: number) => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token || !subjectId) return;
+    try {
+      const response = await axios.get(`${API_URL}/api/attendance/dates`, {
+        params: { subjectId, month: month + 1, year },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setAttendanceMarkedDays(response.data.days || []);
+    } catch (err) {
+      console.error('Failed to load attendance marked days', err);
+    }
+  };
+
+  const saveAttendance = async (): Promise<{ ok: boolean; message: string }> => {
+    const token = localStorage.getItem('collegePortalToken');
+    if (!token) return { ok: false, message: 'You are not signed in.' };
+    if (!attendanceSubjectId) return { ok: false, message: 'Please select a subject.' };
+
+    setAttendanceSaving(true);
+    setAttendanceErr('');
+    setAttendanceMsg('');
+
+    try {
+      const dateStr = `${attendanceDate.getFullYear()}-${String(attendanceDate.getMonth() + 1).padStart(2, '0')}-${String(attendanceDate.getDate()).padStart(2, '0')}`;
+
+      // If records is empty (user clicked Remove), delete attendance for this date+subject
+      const hasAny = Object.keys(attendanceRecords).length > 0;
+      if (!hasAny) {
+        const response = await axios.delete(
+          `${API_URL}/api/attendance`,
+          { data: { date: dateStr, subjectId: attendanceSubjectId }, headers: { Authorization: `Bearer ${token}` } },
+        );
+        fetchAttendanceMarkedDays(attendanceSubjectId, attendanceDate.getMonth(), attendanceDate.getFullYear());
+        return { ok: true, message: response.data.message || 'Attendance cleared.' };
+      }
+
+      const records = attendanceStudents
+        .filter((s) => attendanceRecords[s.id] !== undefined)
+        .map((s) => ({ studentId: s.id, present: attendanceRecords[s.id]! }));
+
+      const response = await axios.post(
+        `${API_URL}/api/attendance`,
+        { date: dateStr, subjectId: attendanceSubjectId, records },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
+      // Refresh marked days for calendar dots
+      fetchAttendanceMarkedDays(attendanceSubjectId, attendanceDate.getMonth(), attendanceDate.getFullYear());
+
+      return { ok: true, message: response.data.message || 'Attendance saved successfully.' };
+    } catch (err) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to save attendance.' : 'Unable to save attendance.';
+      return { ok: false, message };
+    } finally {
+      setAttendanceSaving(false);
     }
   };
 
@@ -858,7 +1010,11 @@ function App() {
   };
 
   const openEditUser = (item: UserListItem) => {
-  const toDateInput = (iso: string | null) => (iso ? new Date(iso).toISOString().slice(0, 10) : '');
+  const toDateInput = (iso: string | null) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
   setEditUserForm({
     id: item.id, username: item.username, collegeId: item.collegeId, email: item.email,
     firstName: item.firstName, lastName: item.lastName, role: item.role, isActive: item.isActive,
@@ -891,46 +1047,49 @@ function App() {
   // setIsEditingUser(true);
 };
 
-const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
+const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>): Promise<boolean> => {
   event.preventDefault();
   setEditUserError('');
   setIsUpdatingUser(true);
   try {
     const token = localStorage.getItem('collegePortalToken');
+    // Helper: send undefined for empty strings so backend optional fields aren't rejected
+    const s = (v: string) => (v.trim() === '' ? undefined : v.trim());
     await axios.patch(`${API_URL}/api/auth/users/${editUserForm.id}`, {
-      username: editUserForm.username, collegeId: editUserForm.collegeId, email: editUserForm.email,
-      firstName: editUserForm.firstName, lastName: editUserForm.lastName, role: editUserForm.role,
+      username: s(editUserForm.username), collegeId: s(editUserForm.collegeId), email: s(editUserForm.email),
+      firstName: s(editUserForm.firstName), lastName: s(editUserForm.lastName), role: editUserForm.role || undefined,
       isActive: editUserForm.isActive,
-      phoneNumber: editUserForm.phoneNumber,
-      dob: editUserForm.dob,
-      joiningDate: editUserForm.joiningDate,
-      gender: editUserForm.gender,
-      religion: editUserForm.religion,
-      address: editUserForm.address,
-      maritalStatus: editUserForm.maritalStatus,
-      partnerName: editUserForm.partnerName,
-      partnerOccupation: editUserForm.partnerOccupation,
-      salary: editUserForm.salary,
-      yearsOfExperience: editUserForm.yearsOfExperience,
-      departmentId: editUserForm.departmentId,
-      courseId: editUserForm.courseId,
-      regulationId: editUserForm.regulationId,
-      rollNumber: editUserForm.rollNumber,
-      fatherName: editUserForm.fatherName,
-      motherName: editUserForm.motherName,
-      guardianName: editUserForm.guardianName,
-      fatherOccupation: editUserForm.fatherOccupation,
-      motherOccupation: editUserForm.motherOccupation,
-      guardianOccupation: editUserForm.guardianOccupation,
-      identificationMark1: editUserForm.identificationMark1,
-      identificationMark2: editUserForm.identificationMark2,
-      isRegular: editUserForm.isRegular,
+      phoneNumber: s(editUserForm.phoneNumber),
+      dob: s(editUserForm.dob),
+      joiningDate: s(editUserForm.joiningDate),
+      gender: editUserForm.gender || undefined,
+      religion: s(editUserForm.religion),
+      address: s(editUserForm.address),
+      maritalStatus: editUserForm.maritalStatus || undefined,
+      partnerName: s(editUserForm.partnerName),
+      partnerOccupation: s(editUserForm.partnerOccupation),
+      salary: s(editUserForm.salary),
+      yearsOfExperience: s(editUserForm.yearsOfExperience),
+      departmentId: s(editUserForm.departmentId),
+      courseId: s(editUserForm.courseId),
+      regulationId: s(editUserForm.regulationId),
+      rollNumber: s(editUserForm.rollNumber),
+      fatherName: s(editUserForm.fatherName),
+      motherName: s(editUserForm.motherName),
+      guardianName: s(editUserForm.guardianName),
+      fatherOccupation: s(editUserForm.fatherOccupation),
+      motherOccupation: s(editUserForm.motherOccupation),
+      guardianOccupation: s(editUserForm.guardianOccupation),
+      identificationMark1: s(editUserForm.identificationMark1),
+      identificationMark2: s(editUserForm.identificationMark2),
+      isRegular: editUserForm.isRegular || undefined,
     }, { headers: { Authorization: `Bearer ${token}` } });
-    // setIsEditingUser(false);
     await fetchUsers();
+    return true;
   } catch (err) {
     const message = axios.isAxiosError(err) ? err.response?.data?.message || 'Unable to update user.' : 'Unable to update user.';
     setEditUserError(message);
+    return false;
   } finally {
     setIsUpdatingUser(false);
   }
@@ -1015,18 +1174,14 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
             { id: 'users', label: 'Users' },
             { id: 'create-users', label: 'Create Users' },
             { id: 'departments', label: 'Courses' },
-            { id: 'students', label: 'Students' },
-            { id: 'teachers', label: 'Teachers' },
-            { id: 'exam-cell', label: 'Exam Cell' },
             { id: 'syllabus', label: 'Syllabus' },
+            { id: 'attendance', label: 'Attendance' },
             { id: 'fees', label: 'Fees' },
             { id: 'profile', label: 'Profile' },
           ]
         : user.role === 'ADMIN'
           ? [
               { id: 'overview', label: 'Overview' },
-              { id: 'students', label: 'Students' },
-              { id: 'teachers', label: 'Teachers' },
               { id: 'syllabus', label: 'Syllabus' },
               { id: 'fees', label: 'Fees' },
               { id: 'profile', label: 'Profile' },
@@ -1034,17 +1189,20 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
           : user.role === 'EXAM_CELL'
             ? [
                 { id: 'overview', label: 'Overview' },
-                { id: 'exam-cell', label: 'Exam Cell' },
                 { id: 'syllabus', label: 'Syllabus' },
-                { id: 'students', label: 'Students' },
                 { id: 'fees', label: 'Fees' },
                 { id: 'profile', label: 'Profile' },
               ]
-            : user.role === 'TEACHER'
+            : user.role === 'ACCOUNTANT'
               ? [
                   { id: 'overview', label: 'Overview' },
-                  { id: 'students', label: 'Students' },
-                  { id: 'teachers', label: 'Teachers' },
+                  { id: 'fees', label: 'Fees' },
+                  { id: 'profile', label: 'Profile' },
+                ]
+              : user.role === 'TEACHER'
+              ? [
+                  { id: 'overview', label: 'Overview' },
+                  { id: 'attendance', label: 'Attendance' },
                   { id: 'profile', label: 'Profile' },
                 ]
               : [
@@ -1066,8 +1224,9 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
       { value: 'EXAM_CELL', label: 'Exam Cell', count: roleGroups.EXAM_CELL?.length ?? 0 },
       { value: 'TEACHER', label: 'Teacher', count: roleGroups.TEACHER?.length ?? 0 },
       { value: 'STUDENT', label: 'Student', count: roleGroups.STUDENT?.length ?? 0 },
+      { value: 'ACCOUNTANT', label: 'Accountant', count: roleGroups.ACCOUNTANT?.length ?? 0 },
     ];
-    const roleOrder = ['SUPER_ADMIN', 'ADMIN', 'CHAIRMAN', 'EXAM_CELL', 'TEACHER', 'STUDENT'];
+    const roleOrder = ['SUPER_ADMIN', 'ADMIN', 'CHAIRMAN', 'EXAM_CELL', 'TEACHER', 'STUDENT', 'ACCOUNTANT'];
     const displayedRoleGroups =
       usersRoleFilter === 'ALL'
         ? Object.entries(roleGroups).sort(([a], [b]) => roleOrder.indexOf(a) - roleOrder.indexOf(b))
@@ -1147,7 +1306,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                     key={item.id}
                     type="button"
                     onClick={() => {
-                    setActivePage(item.id as 'overview' | 'users' | 'create-users' | 'departments' | 'students' | 'teachers' | 'exam-cell' | 'fees' | 'syllabus' | 'profile');                      setSelectedRegulation(null);                      setQuickActionsOpen(false);
+                    setActivePage(item.id as 'overview' | 'users' | 'create-users' | 'departments' | 'students' | 'teachers' | 'exam-cell' | 'fees' | 'syllabus' | 'attendance' | 'profile');                      setSelectedRegulation(null);                      setQuickActionsOpen(false);
                       setMobileNavOpen(false); // NEW: close drawer after picking a page
                     }}
                     className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${
@@ -1158,7 +1317,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                   >
                     <span>{item.label}</span>
                     <span className="rounded-full border border-current/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em]">
-                    {item.id === 'overview' ? 'Home' : item.id === 'users' ? 'Team' : item.id === 'create-users' ? 'New' : item.id === 'departments' ? 'Dept' : item.id === 'profile' ? 'Info' : item.id === 'students' ? 'Stu' : item.id === 'teachers' ? 'Fac' : item.id === 'exam-cell' ? 'Exam' : item.id === 'syllabus' ? 'Syl' : 'Fees'}                    </span>
+                    {item.id === 'overview' ? 'Home' : item.id === 'users' ? 'Team' : item.id === 'create-users' ? 'New' : item.id === 'departments' ? 'Dept' : item.id === 'profile' ? 'Info' : item.id === 'students' ? 'Stu' : item.id === 'teachers' ? 'Fac' : item.id === 'exam-cell' ? 'Exam' : item.id === 'syllabus' ? 'Syl' : item.id === 'attendance' ? 'Att' : 'Fees'}                    </span>
                   </button>
                 ))}
               </nav>
@@ -1337,7 +1496,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                         <div>
                           <h3 className={`text-xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>User details</h3>
                           <p className={`${isDark ? 'text-slate-400' : 'text-slate-500'} text-sm`}>
-                            Allowed roles: {user.role === 'SUPER_ADMIN' ? 'Admin, Chairman, Exam Cell, Teacher, Student' : 'Admin, Exam Cell, Teacher, Student'}
+                            Allowed roles: {user.role === 'SUPER_ADMIN' ? 'Admin, Chairman, Exam Cell, Teacher, Student, Accountant' : 'Admin, Exam Cell, Teacher, Student'}
                           </p>
                         </div>
                       </div>
@@ -1418,7 +1577,14 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                               ))}
                             </ul>
                           ) : null}
-                          <input required key={fileInputResetKey} type="file" multiple onChange={(e) => setTeacherDocuments(Array.from(e.target.files ?? []))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-2.5 outline-none file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-white`} />
+                          <input id="doc-file-input" key={fileInputResetKey} type="file" multiple onChange={(e) => setTeacherDocuments(Array.from(e.target.files ?? []))} className="sr-only" />
+                          <label htmlFor="doc-file-input" className={`inline-flex cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:bg-primary/90`}>
+                            <Upload className="h-4 w-4" />
+                            Choose Files
+                          </label>
+                          <span className={`ml-2 text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                            {teacherDocuments.length > 0 ? `${teacherDocuments.length} file(s) selected` : 'No file chosen'}
+                          </span>
                         </div>
                         <div>
                           <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Password</label>
@@ -1443,7 +1609,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                         <div>
                           <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Role</label>
                           <select required value={createUserForm.role} onChange={(e) => setCreateUserForm((current) => ({ ...current, role: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
-                            {(user.role === 'SUPER_ADMIN' ? ['Select a Role', 'ADMIN', 'CHAIRMAN', 'EXAM_CELL', 'TEACHER', 'STUDENT'] : ['Select a Role','ADMIN', 'EXAM_CELL', 'TEACHER', 'STUDENT']).map((role) => (
+                            {(user.role === 'SUPER_ADMIN' ? ['Select a Role', 'ADMIN', 'CHAIRMAN', 'EXAM_CELL', 'TEACHER', 'STUDENT', 'ACCOUNTANT'] : ['Select a Role','ADMIN', 'EXAM_CELL', 'TEACHER', 'STUDENT']).map((role) => (
                               <option key={role} value={role}>{role}</option>
                             ))}
                           </select>
@@ -1452,7 +1618,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           <>
                             <div>
                               <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Course</label>
-                              <select value={createUserForm.courseId} onChange={(e) => setCreateUserForm((c) => ({ ...c, courseId: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                              <select value={createUserForm.courseId} onChange={(e) => setCreateUserForm((c) => ({ ...c, courseId: e.target.value, departmentId: '' }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
                                 <option value="">Select course</option>
                                 {courseList.map((course) => (
                                   <option key={course.id} value={course.id}>{course.code} — {course.name}</option>
@@ -1462,15 +1628,20 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                             <div>
                               <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Department</label>
                               <select value={createUserForm.departmentId} onChange={(e) => setCreateUserForm((c) => ({ ...c, departmentId: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
-                                <option value="">Select department</option>
-                                {departmentList.map((dept) => (
+                                <option value="">{createUserForm.courseId
+                                  ? (courseList.find((course) => course.id === createUserForm.courseId)?.departments?.length ? 'Select department' : 'No department for this course')
+                                  : 'Select a course first'}</option>
+                                {(createUserForm.courseId
+                                  ? (courseList.find((course) => course.id === createUserForm.courseId)?.departments ?? [])
+                                  : []
+                                ).map((dept) => (
                                   <option key={dept.id} value={dept.id}>{dept.code} — {dept.name}</option>
                                 ))}
                               </select>
                             </div>
                           </>
                         ) : null}
-                        {['TEACHER', 'EXAM_CELL', 'ADMIN'].includes(createUserForm.role) ? (
+                        {['TEACHER', 'EXAM_CELL', 'ADMIN', 'ACCOUNTANT'].includes(createUserForm.role) ? (
                           <>
                             <div>
                               <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Marital Status</label>
@@ -1859,7 +2030,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           </button>
                         </div>
 
-                        <form className="grid gap-4 md:grid-cols-2" onSubmit={async (e) => { await handleUpdateUser(e); setActivePage('users'); }}>
+                        <form className="grid gap-4 md:grid-cols-2" onSubmit={async (e) => { const ok = await handleUpdateUser(e); if (ok) setActivePage('users'); }}>
                           <div>
                             <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Username</label>
                             <input value={editUserForm.username} onChange={(e) => setEditUserForm((c) => ({ ...c, username: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
@@ -1883,7 +2054,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           <div>
                             <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Role</label>
                             <select value={editUserForm.role} onChange={(e) => setEditUserForm((c) => ({ ...c, role: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
-                              {(user.role === 'SUPER_ADMIN' ? ['Select a Role', 'ADMIN', 'CHAIRMAN', 'EXAM_CELL', 'TEACHER', 'STUDENT'] : ['Select a Role', 'ADMIN', 'EXAM_CELL', 'TEACHER', 'STUDENT']).map((role) => (
+                              {(user.role === 'SUPER_ADMIN' ? ['Select a Role', 'ADMIN', 'CHAIRMAN', 'EXAM_CELL', 'TEACHER', 'STUDENT', 'ACCOUNTANT'] : ['Select a Role', 'ADMIN', 'EXAM_CELL', 'TEACHER', 'STUDENT']).map((role) => (
                                 <option key={role} value={role}>{role}</option>
                               ))}
                             </select>
@@ -1897,7 +2068,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           </div>
                           <div>
                             <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Phone number</label>
-                            <input required type="tel" value={editUserForm.phoneNumber} onChange={(e) => setEditUserForm((c) => ({ ...c, phoneNumber: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
+                            <input type="tel" value={editUserForm.phoneNumber} onChange={(e) => setEditUserForm((c) => ({ ...c, phoneNumber: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`} />
                           </div>
                           <div>
                             <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Gender</label>
@@ -1929,7 +2100,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                             <>
                               <div>
                                 <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Course</label>
-                                <select value={editUserForm.courseId} onChange={(e) => setEditUserForm((c) => ({ ...c, courseId: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
+                                <select value={editUserForm.courseId} onChange={(e) => setEditUserForm((c) => ({ ...c, courseId: e.target.value, departmentId: '' }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
                                   <option value="">Select course</option>
                                   {courseList.map((course) => (
                                     <option key={course.id} value={course.id}>{course.code} — {course.name}</option>
@@ -1939,15 +2110,20 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                               <div>
                                 <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Department</label>
                                 <select value={editUserForm.departmentId} onChange={(e) => setEditUserForm((c) => ({ ...c, departmentId: e.target.value }))} className={`${isDark ? 'border-slate-700 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-3 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`}>
-                                  <option value="">Select department</option>
-                                  {departmentList.map((dept) => (
+                                  <option value="">{editUserForm.courseId
+                                    ? (courseList.find((course) => course.id === editUserForm.courseId)?.departments?.length ? 'Select department' : 'No department for this course')
+                                    : 'Select a course first'}</option>
+                                  {(editUserForm.courseId
+                                    ? (courseList.find((course) => course.id === editUserForm.courseId)?.departments ?? [])
+                                    : []
+                                  ).map((dept) => (
                                     <option key={dept.id} value={dept.id}>{dept.code} — {dept.name}</option>
                                   ))}
                                 </select>
                               </div>
                             </>
                           ) : null}
-                          {['TEACHER', 'EXAM_CELL', 'ADMIN'].includes(editUserForm.role) ? (
+                          {['TEACHER', 'EXAM_CELL', 'ADMIN', 'ACCOUNTANT'].includes(editUserForm.role) ? (
                             <>
                               <div>
                                 <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Marital Status</label>
@@ -2094,7 +2270,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Gender</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.gender ? viewUser.gender.charAt(0) + viewUser.gender.slice(1).toLowerCase() : '—'}</dd></div>
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Religion</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.religion || '—'}</dd></div>
                           <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Address</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.address || '—'}</dd></div>
-                          {['TEACHER', 'EXAM_CELL', 'ADMIN'].includes(viewUser.role) ? (
+                          {['TEACHER', 'EXAM_CELL', 'ADMIN', 'ACCOUNTANT'].includes(viewUser.role) ? (
                             <>
                               <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Marital status</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.maritalStatus ? viewUser.maritalStatus.charAt(0) + viewUser.maritalStatus.slice(1).toLowerCase() : '—'}</dd></div>
                               {viewUser.maritalStatus === 'MARRIED' && (
@@ -2119,6 +2295,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                               <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Regular</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.isRegular === null ? '—' : viewUser.isRegular ? 'Regular' : 'Irregular'}</dd></div>
                               <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Course</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.course || 'Not assigned'}</dd></div>
                               <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Department</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.department || 'Not assigned'}</dd></div>
+                              <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Regulation</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.regulation || 'Not assigned'}</dd></div>
                               <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Father name</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.fatherName || '—'}</dd></div>
                               <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Father occupation</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.fatherOccupation || '—'}</dd></div>
                               <div><dt className={`text-xs uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Mother name</dt><dd className={`mt-1 text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>{viewUser.motherName || '—'}</dd></div>
@@ -2384,6 +2561,7 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                     subjects={syllabusSubjects}
                     subjectsLoading={syllabusLoading}
                     departments={departmentList}
+                    courses={courseList}
                     isDark={isDark}
                     onLoadSubjects={loadSubjects}
                     onSaveSubject={saveSubject}
@@ -2436,6 +2614,65 @@ const handleUpdateUser = async (event: React.FormEvent<HTMLFormElement>) => {
                       </div>
                     )}
                   </div>
+                ) : activePage === 'attendance' ? (
+                  <AttendancePage
+                    role={user.role}
+                    regulations={attendanceRegulations}
+                    selectedRegulationId={attendanceRegulationId}
+                    subjects={attendanceSubjects}
+                    students={attendanceStudents}
+                    records={attendanceRecords}
+                    markedDays={attendanceMarkedDays}
+                    selectedDate={attendanceDate}
+                    selectedSubjectId={attendanceSubjectId}
+                    loading={attendanceLoading}
+                    saving={attendanceSaving}
+                    msg={attendanceMsg}
+                    err={attendanceErr}
+                    isDark={isDark}
+                    onSelectDate={(d) => {
+                      setAttendanceDate(d);
+                      if (attendanceSubjectId) {
+                        fetchAttendanceRecords(d, attendanceSubjectId);
+                      }
+                    }}
+                    onSelectSubject={(id) => {
+                      setAttendanceSubjectId(id);
+                      setAttendanceRecords({});
+                      if (id) {
+                        fetchAttendanceStudents(id);
+                        fetchAttendanceRecords(attendanceDate, id);
+                        fetchAttendanceMarkedDays(id, attendanceDate.getMonth(), attendanceDate.getFullYear());
+                      } else {
+                        setAttendanceStudents([]);
+                      }
+                    }}
+                    onSelectRegulation={(id) => {
+                      setAttendanceRegulationId(id);
+                      setAttendanceSubjectId('');
+                      setAttendanceStudents([]);
+                      setAttendanceRecords({});
+                      setAttendanceMarkedDays([]);
+                      fetchAttendanceSubjects(id);
+                    }}
+                    onSetRecord={(studentId, present) => {
+                      setAttendanceRecords((prev) => ({ ...prev, [studentId]: present }));
+                    }}
+                    onMarkAll={(present) => {
+                      const updated: Record<string, boolean> = {};
+                      attendanceStudents.forEach((s) => { updated[s.id] = present; });
+                      setAttendanceRecords(updated);
+                    }}
+                    onRemoveAll={() => { setAttendanceRecords({}); }}
+                    onSave={saveAttendance}
+                    onSetMsg={setAttendanceMsg}
+                    onSetErr={setAttendanceErr}
+                    onLoadSubjects={fetchAttendanceSubjects}
+                    onLoadRegulations={fetchAttendanceRegulations}
+                    onRefreshMarkedDays={(month, year) => {
+                      if (attendanceSubjectId) fetchAttendanceMarkedDays(attendanceSubjectId, month, year);
+                    }}
+                  />
                 ) : activePage === 'fees' ? (
                   <FeesManager
                     role={user.role}
@@ -2753,9 +2990,10 @@ type SyllabusManagerProps = {
   subjects: SyllabusSubject[];
   subjectsLoading: boolean;
   departments: DepartmentItem[];
+  courses: CourseItem[];
   isDark: boolean;
   onLoadSubjects: (regulationId: string, departmentId?: string) => Promise<void>;
-  onSaveSubject: (payload: { subjectId?: string; departmentId: string; year: string; semester: string; code: string; name: string; credits: number }) => Promise<{ ok: boolean; message: string }>;
+  onSaveSubject: (payload: { subjectId?: string; departmentId: string; courseId: string; year: string; semester: string; code: string; name: string; credits: number }) => Promise<{ ok: boolean; message: string }>;
   onDeleteSubject: (subject: SyllabusSubject) => Promise<{ ok: boolean; message: string }>;
   onAddRegulation: (name: string) => Promise<{ ok: boolean; message: string }>;
   onDeleteRegulation: (regulation: RegulationItem) => Promise<{ ok: boolean; message: string }>;
@@ -2771,6 +3009,7 @@ function SyllabusManager({
   subjects,
   subjectsLoading,
   departments,
+  courses,
   isDark,
   onLoadSubjects,
   onSaveSubject,
@@ -2781,7 +3020,7 @@ function SyllabusManager({
 }: SyllabusManagerProps) {
   const [deptDropdownOpen, setDeptDropdownOpen] = useState(false);
   const [deptSearch, setDeptSearch] = useState('');
-  const [form, setForm] = useState({ departmentId: '', year: '', semester: '', code: '', name: '', credits: '' });
+  const [form, setForm] = useState({ courseId: '', departmentId: '', year: '', semester: '', code: '', name: '', credits: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [editingSubject, setEditingSubject] = useState<SyllabusSubject | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -2796,7 +3035,7 @@ function SyllabusManager({
   useEffect(() => {
     setDeptDropdownOpen(false);
     setDeptSearch('');
-    setForm({ departmentId: '', year: '', semester: '', code: '', name: '', credits: '' });
+    setForm({ courseId: '', departmentId: '', year: '', semester: '', code: '', name: '', credits: '' });
     setErrors({});
     setEditingSubject(null);
     setFormMsg('');
@@ -2809,16 +3048,75 @@ function SyllabusManager({
   const labelClass = `mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`;
   const errClass = 'mt-1.5 text-sm text-red-600';
 
-  const filteredDepts = departments.filter(
+  const selectedCourse = courses.find((c) => c.id === form.courseId);
+  // Departments only from the selected course — no course selected means no departments shown
+  const courseDepts = selectedCourse?.departments ?? [];
+  const filteredDepts = courseDepts.filter(
     (d) =>
       d.name.toLowerCase().includes(deptSearch.toLowerCase()) ||
       d.code.toLowerCase().includes(deptSearch.toLowerCase()),
   );
   const selectedDept = departments.find((d) => d.id === form.departmentId);
 
+  /* Year and semester dropdown options. Years come from the selected
+     course's duration (1ST YEAR … NTH YEAR); each year offers the two
+     semesters that belong to it (1 SEM & 2 SEM, 3 SEM & 4 SEM, …).     */
+  const ORDINALS = ['1ST', '2ND', '3RD', '4TH', '5TH', '6TH', '7TH', '8TH'];
+  /* "1ST YEAR" → "1st Year", "3 SEM" → "3rd Semester" (display only, value stays uppercase) */
+  const formatOrdinal = (value: string, unit: string) => {
+    const num = parseInt(value, 10);
+    if (Number.isFinite(num)) {
+      const ones = num % 10;
+      const tens = Math.floor(num / 10) % 10;
+      const suffix = tens === 1 ? 'th' : ones === 1 ? 'st' : ones === 2 ? 'nd' : ones === 3 ? 'rd' : 'th';
+      return `${num}${suffix} ${unit}`;
+    }
+    return value;
+  };
+  const ensureValue = (opts: string[], current: string) => {
+    if (current && !opts.includes(current)) return [...opts, current];
+    return opts;
+  };
+  const courseYearOptions = Array.from({ length: selectedCourse?.duration ?? 0 }, (_, i) => `${ORDINALS[i] ?? `${i + 1}TH`} YEAR`);
+  const yearOptions = ensureValue(courseYearOptions, form.year);
+  const selectedYearIndex = courseYearOptions.indexOf(form.year);
+  const semesterOptions = ensureValue(
+    selectedYearIndex !== -1
+      ? [`${selectedYearIndex * 2 + 1} SEM`, `${selectedYearIndex * 2 + 2} SEM`]
+      : Array.from({ length: (selectedCourse?.duration ?? 0) * 2 }, (_, i) => `${i + 1} SEM`),
+    form.semester,
+  );
+
+  /* Group subjects by Department, then Year, then Semester so the list
+     renders as clearly separated sections instead of one flat table.   */
+  const groupedSubjects = subjects.reduce<{ dept: { id: string; name: string; code: string }; years: { year: string; semesters: { semester: string; subjectsIn: SyllabusSubject[] }[] }[] }[]>((acc, sub) => {
+    const deptId = sub.departmentId;
+    const year = sub.year;
+    const semester = sub.semester;
+    let deptGroup = acc.find((g) => g.dept.id === deptId);
+    if (!deptGroup) {
+      deptGroup = { dept: { id: deptId, name: sub.department?.name ?? '—', code: sub.department?.code ?? '' }, years: [] };
+      acc.push(deptGroup);
+    }
+    let yearGroup = deptGroup.years.find((y) => y.year === year);
+    if (!yearGroup) {
+      yearGroup = { year, semesters: [] };
+      deptGroup.years.push(yearGroup);
+    }
+    let semGroup = yearGroup.semesters.find((s) => s.semester === semester);
+    if (!semGroup) {
+      semGroup = { semester, subjectsIn: [] };
+      yearGroup.semesters.push(semGroup);
+    }
+    semGroup.subjectsIn.push(sub);
+    return acc;
+  }, []);
+
   const validate = (): boolean => {
     const nextErrors: Record<string, string> = {};
-    if (!form.departmentId) {
+    if (!form.courseId) {
+      nextErrors.departmentId = 'Please select a course first.';
+    } else if (!form.departmentId) {
       nextErrors.departmentId = 'Please select a department.';
     }
     if (!form.year.trim()) {
@@ -2877,6 +3175,15 @@ function SyllabusManager({
     }
   };
 
+  const handleSelectCourse = (courseId: string) => {
+    setForm((current) => ({ ...current, courseId, departmentId: '', year: '', semester: '', code: '', name: '', credits: '' }));
+    setDeptSearch('');
+    setErrors({});
+    if (selectedRegulation) {
+      onLoadSubjects(selectedRegulation.id);
+    }
+  };
+
   const handleSave = async () => {
     setFormErr('');
     setFormMsg('');
@@ -2887,6 +3194,7 @@ function SyllabusManager({
     const result = await onSaveSubject({
       subjectId: editingSubject?.id,
       departmentId: form.departmentId,
+      courseId: form.courseId,
       year: form.year.trim(),
       semester: form.semester.trim(),
       code: form.code.trim(),
@@ -2915,7 +3223,7 @@ function SyllabusManager({
 
   const startEdit = (subject: SyllabusSubject) => {
     setEditingSubject(subject);
-    setForm({ departmentId: subject.departmentId, year: subject.year, semester: subject.semester, code: subject.code, name: subject.name, credits: String(subject.credits) });
+    setForm({ courseId: subject.courseId ?? '', departmentId: subject.departmentId, year: subject.year, semester: subject.semester, code: subject.code, name: subject.name, credits: String(subject.credits) });
     setErrors({});
     setFormErr('');
     setFormMsg('');
@@ -3135,17 +3443,37 @@ function SyllabusManager({
         ) : null}
 
         <div className="mt-6 space-y-4">
-          {/* Department searchable dropdown */}
+          {/* Course dropdown */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className={labelClass}>Select Course</label>
+              <select
+                value={form.courseId}
+                onChange={(e) => handleSelectCourse(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">Select a Course</option>
+                {courses.map((course) => (
+                  <option key={course.id} value={course.id}>{course.code} — {course.name}</option>
+                ))}
+              </select>
+            </div>
+            {/* Department searchable dropdown */}
           <div>
             <label className={labelClass}>Select Department</label>
             <div className="relative">
               <button
                 type="button"
-                onClick={() => setDeptDropdownOpen((current) => !current)}
-                className={`${inputClass} flex items-center justify-between text-left`}
+                onClick={() => { if (form.courseId) setDeptDropdownOpen((current) => !current); }}
+                disabled={!form.courseId}
+                className={`${inputClass} flex items-center justify-between text-left ${!form.courseId ? 'cursor-not-allowed opacity-60' : ''}`}
               >
-                <span className={selectedDept ? '' : `${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                  {selectedDept ? `${selectedDept.name} (${selectedDept.code})` : 'Select a Department'}
+                <span className={selectedDept || form.courseId ? '' : `${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                  {selectedDept
+                    ? `${selectedDept.name} (${selectedDept.code})`
+                    : form.courseId
+                      ? 'Select a Department'
+                      : 'Select a Course first'}
                 </span>
                 <span className="flex items-center gap-1">
                   {selectedDept ? (
@@ -3176,8 +3504,8 @@ function SyllabusManager({
                     />
                   </div>
                   <div className="max-h-56 overflow-y-auto">
-                    {departments.length === 0 ? (
-                      <div className={`px-4 py-3 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>No departments registered yet. Add them under Courses.</div>
+                    {courseDepts.length === 0 ? (
+                      <div className={`px-4 py-3 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{form.courseId ? 'No departments assigned to this course yet. Assign them under Courses.' : 'Select a Course first.'}</div>
                     ) : filteredDepts.length === 0 ? (
                       <div className={`px-4 py-3 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>No departments match "{deptSearch}".</div>
                     ) : (
@@ -3203,17 +3531,38 @@ function SyllabusManager({
             </div>
             {errors.departmentId ? <p className={errClass}>{errors.departmentId}</p> : null}
           </div>
+          </div>
 
-          {/* Year + semester side by side */}
+          {/* Year + semester dropdowns — years come from the selected course's duration */}
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className={labelClass}>Year</label>
-              <input value={form.year} onChange={(e) => setForm((current) => ({ ...current, year: e.target.value }))} placeholder="e.g. 1st Year" className={inputClass} />
+              <select
+                value={form.year}
+                onChange={(e) => setForm((current) => ({ ...current, year: e.target.value, semester: '' }))}
+                disabled={!form.courseId}
+                className={`${inputClass} ${!form.courseId ? 'cursor-not-allowed opacity-60' : ''}`}
+              >
+                <option value="">{form.courseId ? 'Select Year' : 'Select a Course first'}</option>
+                {yearOptions.map((y) => (
+                  <option key={y} value={y}>{formatOrdinal(y, 'Year')}</option>
+                ))}
+              </select>
               {errors.year ? <p className={errClass}>{errors.year}</p> : null}
             </div>
             <div>
               <label className={labelClass}>Semester</label>
-              <input value={form.semester} onChange={(e) => setForm((current) => ({ ...current, semester: e.target.value }))} placeholder="e.g. 1st Semester" className={inputClass} />
+              <select
+                value={form.semester}
+                onChange={(e) => setForm((current) => ({ ...current, semester: e.target.value }))}
+                disabled={!form.year}
+                className={`${inputClass} ${!form.year ? 'cursor-not-allowed opacity-60' : ''}`}
+              >
+                <option value="">{form.year ? 'Select Semester' : 'Select a Year first'}</option>
+                {semesterOptions.map((s) => (
+                  <option key={s} value={s}>{formatOrdinal(s, 'Semester')}</option>
+                ))}
+              </select>
               {errors.semester ? <p className={errClass}>{errors.semester}</p> : null}
             </div>
           </div>
@@ -3261,19 +3610,19 @@ function SyllabusManager({
         </div>
       </div>
 
-      {/* Existing subjects table */}
+      {/* Existing subjects — grouped into separated Department → Year → Semester sections */}
       <div className={card}>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.25em] text-slate-400">Existing Subjects</p>
             <h4 className={`mt-2 text-xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>{selectedRegulation.name} — {selectedDept ? selectedDept.name : 'All Departments'}</h4>
           </div>
-          <span className={`rounded-full px-3 py-1 text-xs font-medium ${isDark ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+          <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${isDark ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
             {subjects.length} {subjects.length === 1 ? 'subject' : 'subjects'}
           </span>
         </div>
         {!selectedDept ? (
-          <p className={`mt-2 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Select a department above to filter subjects to it.</p>
+          <p className={`mt-2 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Select a department above to update what's shown below. Subjects are grouped by department, year and semester.</p>
         ) : null}
 
         {subjectsLoading ? (
@@ -3286,56 +3635,430 @@ function SyllabusManager({
               : 'No subjects saved for this regulation yet. Select a department and add subjects using the form above.'}
           </div>
         ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className={`min-w-full text-left text-sm ${isDark ? 'text-slate-200' : 'text-slate-900'}`}>
-              <thead>
-                <tr className={isDark ? 'border-b border-slate-700 text-slate-400' : 'border-b border-slate-200 text-slate-500'}>
-                  <th className="px-3 py-2 font-medium">Year</th>
-                  <th className="px-3 py-2 font-medium">Semester</th>
-                  <th className="px-3 py-2 font-medium">Subject Code</th>
-                  <th className="px-3 py-2 font-medium">Subject Name</th>
-                  <th className="px-3 py-2 text-center font-medium">Credits</th>
-                  <th className="px-3 py-2 font-medium">Department</th>
-                  <th className="px-3 py-2 text-right font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {subjects.map((sub) => (
-                  <tr key={sub.id} className={isDark ? 'border-b border-slate-800' : 'border-b border-slate-100'}>
-                    <td className="px-3 py-3">{sub.year || '—'}</td>
-                    <td className="px-3 py-3">{sub.semester || '—'}</td>
-                    <td className="px-3 py-3 font-medium">{sub.code}</td>
-                    <td className="px-3 py-3">{sub.name}</td>
-                    <td className="px-3 py-3 text-center">{sub.credits}</td>
-                    <td className="px-3 py-3">{sub.department?.name ?? '—'}</td>
-                    <td className="px-3 py-3">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => startEdit(sub)}
-                          className={`rounded-lg p-1.5 transition ${isDark ? 'text-slate-400 hover:bg-slate-800 hover:text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
-                          aria-label={`Edit ${sub.name}`}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteSubject(sub)}
-                          disabled={deletingSubjectId === sub.id}
-                          className="rounded-lg p-1.5 text-red-500 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-                          aria-label={`Delete ${sub.name}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+          <div className="mt-4 space-y-6">
+            {groupedSubjects.map((group) => (
+              <section key={group.dept.id} className={`overflow-hidden rounded-2xl border ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+                {/* Department header */}
+                <div className={`flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 ${isDark ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-slate-50'}`}>
+                  <div className="flex items-center gap-2">
+                    <Layers className={`h-4 w-4 ${isDark ? 'text-amber-400' : 'text-amber-600'}`} />
+                    <h5 className={`text-sm font-semibold uppercase tracking-wide ${isDark ? 'text-white' : 'text-slate-900'}`}>{group.dept.name}{group.dept.code ? ` (${group.dept.code})` : ''}</h5>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${isDark ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+                    {group.years.reduce((count, y) => count + y.semesters.reduce((c, s) => c + s.subjectsIn.length, 0), 0)} subjects
+                  </span>
+                </div>
+
+                {/* Year → Semester sub-sections */}
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {group.years.map((yearGroup) => (
+                    <div key={`${group.dept.id}-${yearGroup.year}`} className="px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <CalendarDays className={`h-4 w-4 ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
+                        <h6 className={`text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{yearGroup.year}</h6>
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                          {yearGroup.semesters.reduce((c, s) => c + s.subjectsIn.length, 0)} subjects
+                        </span>
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        {yearGroup.semesters.map((semGroup) => (
+                          <div key={`${group.dept.id}-${yearGroup.year}-${semGroup.semester}`} className={`rounded-xl border p-3 ${isDark ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-white'}`}>
+                            <div className={`mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+                              <BookOpen className="h-3.5 w-3.5" /> {semGroup.semester}
+                            </div>
+                            <ul className="space-y-2">
+                              {semGroup.subjectsIn.map((sub) => (
+                                <li key={sub.id} className={`flex items-start justify-between gap-2 rounded-lg border px-3 py-2 text-sm ${isDark ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-slate-50'}`}>
+                                  <div className="min-w-0">
+                                    <div className={`truncate font-medium ${isDark ? 'text-white' : 'text-slate-900'}`}>{sub.name}</div>
+                                    <div className={`mt-0.5 flex flex-wrap items-center gap-x-2 text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                      <span className="font-semibold">{sub.code}</span>
+                                      <span>· {sub.credits} cred</span>
+                                    </div>
+                                  </div>
+                                  <div className="flex shrink-0 items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => startEdit(sub)}
+                                      className={`rounded-lg p-1.5 transition ${isDark ? 'text-slate-400 hover:bg-slate-800 hover:text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+                                      aria-label={`Edit ${sub.name}`}
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteSubject(sub)}
+                                      disabled={deletingSubjectId === sub.id}
+                                      className="rounded-lg p-1.5 text-red-500 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                      aria-label={`Delete ${sub.name}`}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* AttendancePage                                                      */
+/* ------------------------------------------------------------------ */
+
+type AttendanceSubject = { id: string; code: string; name: string; semester: string; regulation: { id: string; name: string }; department: { id: string; code: string; name: string } };
+type AttendanceStudent = { id: string; rollNumber: string; name: string; collegeId: string; department: string | null };
+type AttendanceRegulation = { id: string; name: string };
+
+type AttendancePageProps = {
+  role: string;
+  regulations: AttendanceRegulation[];
+  selectedRegulationId: string;
+  subjects: AttendanceSubject[];
+  students: AttendanceStudent[];
+  records: Record<string, boolean>;
+  markedDays: number[];
+  selectedDate: Date;
+  selectedSubjectId: string;
+  loading: boolean;
+  saving: boolean;
+  msg: string;
+  err: string;
+  isDark: boolean;
+  onSelectDate: (d: Date) => void;
+  onSelectSubject: (id: string) => void;
+  onSelectRegulation: (id: string) => void;
+  onSetRecord: (studentId: string, present: boolean) => void;
+  onMarkAll: (present: boolean) => void;
+  onRemoveAll: () => void;
+  onSave: () => Promise<{ ok: boolean; message: string }>;
+  onSetMsg: (m: string) => void;
+  onSetErr: (m: string) => void;
+  onLoadSubjects: () => void;
+  onLoadRegulations: () => void;
+  onRefreshMarkedDays: (month: number, year: number) => void;
+};
+
+function AttendancePage({
+  regulations,
+  selectedRegulationId,
+  subjects,
+  students,
+  records,
+  markedDays,
+  selectedDate,
+  selectedSubjectId,
+  loading,
+  saving,
+  msg,
+  err,
+  isDark,
+  onSelectDate,
+  onSelectSubject,
+  onSelectRegulation,
+  onSetRecord,
+  onMarkAll,
+  onRemoveAll,
+  onSave,
+  onSetMsg,
+  onSetErr,
+  onLoadSubjects,
+  onLoadRegulations,
+  onRefreshMarkedDays,
+}: AttendancePageProps) {
+  const [calMonth, setCalMonth] = useState(selectedDate.getMonth());
+  const [calYear, setCalYear] = useState(selectedDate.getFullYear());
+
+  useEffect(() => {
+    onLoadRegulations();
+    onLoadSubjects();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const card = `${isDark ? 'border-slate-800 bg-slate-950/50' : 'border-slate-200 bg-white'} rounded-2xl border p-6 shadow-sm`;
+  const selectClass = `${isDark ? 'border-slate-700 bg-slate-800 text-slate-100' : 'border-slate-200 bg-slate-50 text-slate-900'} w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10`;
+
+  // Calendar helpers
+  const today = new Date();
+  const firstDay = new Date(calYear, calMonth, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+  const prevMonth = () => {
+    const m = calMonth === 0 ? 11 : calMonth - 1;
+    const y = calMonth === 0 ? calYear - 1 : calYear;
+    setCalMonth(m);
+    setCalYear(y);
+    onRefreshMarkedDays(m, y);
+  };
+
+  const nextMonth = () => {
+    const m = calMonth === 11 ? 0 : calMonth + 1;
+    const y = calMonth === 11 ? calYear + 1 : calYear;
+    setCalMonth(m);
+    setCalYear(y);
+    onRefreshMarkedDays(m, y);
+  };
+
+  const handleDayClick = (day: number) => {
+    const d = new Date(calYear, calMonth, day);
+    if (d > today) return; // block future dates
+    onSelectDate(d);
+  };
+
+  const isToday = (day: number) =>
+    today.getFullYear() === calYear && today.getMonth() === calMonth && today.getDate() === day;
+
+  const isSelected = (day: number) =>
+    selectedDate.getFullYear() === calYear && selectedDate.getMonth() === calMonth && selectedDate.getDate() === day;
+
+  const isFuture = (day: number) => {
+    const d = new Date(calYear, calMonth, day);
+    d.setHours(0, 0, 0, 0);
+    const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return d > t;
+  };
+
+  const presentCount = Object.values(records).filter((v) => v === true).length;
+  const absentCount = Object.values(records).filter((v) => v === false).length;
+  const unmarkedCount = students.length - presentCount - absentCount;
+
+  const handleSave = async () => {
+    onSetMsg('');
+    onSetErr('');
+    const result = await onSave();
+    if (result.ok) {
+      onSetMsg(result.message);
+      window.setTimeout(() => onSetMsg(''), 3500);
+    } else {
+      onSetErr(result.message);
+    }
+  };
+
+  const selectedSubject = subjects.find((s) => s.id === selectedSubjectId);
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Academics</p>
+          <h3 className={`mt-1 text-2xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>Attendance</h3>
+        </div>
+      </div>
+
+      {/* Regulation + Subject selectors */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className={card}>
+          <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Select Regulation</label>
+          <select
+            value={selectedRegulationId}
+            onChange={(e) => onSelectRegulation(e.target.value)}
+            className={selectClass}
+          >
+            <option value="">— Select a Regulation —</option>
+            {regulations.map((reg) => (
+              <option key={reg.id} value={reg.id}>{reg.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className={card}>
+          <label className={`mb-2 block text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Select Subject</label>
+          <select
+            value={selectedSubjectId}
+            onChange={(e) => onSelectSubject(e.target.value)}
+            disabled={!selectedRegulationId}
+            className={`${selectClass} ${!selectedRegulationId ? 'cursor-not-allowed opacity-60' : ''}`}
+          >
+            <option value="">{selectedRegulationId ? '— Choose a subject —' : 'Select a Regulation first'}</option>
+            {subjects.map((s) => (
+              <option key={s.id} value={s.id}>{s.code} — {s.name} ({s.regulation.name})</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {selectedSubjectId && (
+        <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
+          {/* Calendar */}
+          <div className={card}>
+            <div className="flex items-center justify-between mb-4">
+              <button onClick={prevMonth} className={`p-1.5 rounded-lg transition ${isDark ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+              </button>
+              <span className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>{monthNames[calMonth]} {calYear}</span>
+              <button onClick={nextMonth} className={`p-1.5 rounded-lg transition ${isDark ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-600'}`}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+              </button>
+            </div>
+
+            {/* Day headers */}
+            <div className="grid grid-cols-7 mb-2">
+              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                <div key={i} className={`text-center text-xs font-medium py-1 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>{d}</div>
+              ))}
+            </div>
+
+            {/* Day cells */}
+            <div className="grid grid-cols-7 gap-1">
+              {Array.from({ length: firstDay }).map((_, i) => (
+                <div key={`empty-${i}`} />
+              ))}
+              {Array.from({ length: daysInMonth }).map((_, i) => {
+                const day = i + 1;
+                const hasRecord = markedDays.includes(day);
+                const future = isFuture(day);
+                return (
+                  <button
+                    key={day}
+                    onClick={() => handleDayClick(day)}
+                    disabled={future}
+                    className={`relative flex flex-col items-center justify-center py-2 rounded-lg text-sm transition
+                      ${future
+                        ? isDark ? 'text-slate-700 cursor-not-allowed' : 'text-slate-300 cursor-not-allowed'
+                        : isSelected(day)
+                          ? 'bg-primary text-white font-semibold shadow'
+                          : isToday(day)
+                            ? isDark ? 'ring-1 ring-slate-500 text-slate-100' : 'ring-1 ring-slate-300 text-slate-900'
+                            : isDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'
+                      }`}
+                  >
+                    {day}
+                    {hasRecord && !isSelected(day) && !future && (
+                      <span className="absolute bottom-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Legend */}
+            <div className={`mt-3 flex items-center gap-4 text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-primary" /> Selected</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Marked</span>
+            </div>
+          </div>
+
+          {/* Student list + controls */}
+          <div className={card}>
+            {/* Controls bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div>
+                <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                  <span className="font-semibold">{selectedSubject?.code}</span> — {selectedSubject?.name}
+                </p>
+                <p className={`text-xs mt-0.5 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                  {selectedDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => onMarkAll(true)} className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${isDark ? 'bg-emerald-900/40 text-emerald-300 hover:bg-emerald-900/60' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}>
+                  Mark All Present
+                </button>
+                <button onClick={() => onMarkAll(false)} className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${isDark ? 'bg-red-900/40 text-red-300 hover:bg-red-900/60' : 'bg-red-50 text-red-700 hover:bg-red-100'}`}>
+                  Mark All Absent
+                </button>
+                <button onClick={() => onRemoveAll()} className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${isDark ? 'bg-slate-700/60 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                  Remove
+                </button>
+              </div>
+            </div>
+
+            {/* Messages */}
+            {msg && <div className="mb-3 rounded-lg bg-emerald-500/10 px-4 py-2 text-sm text-emerald-500">{msg}</div>}
+            {err && <div className="mb-3 rounded-lg bg-red-500/10 px-4 py-2 text-sm text-red-500">{err}</div>}
+
+            {/* Student table */}
+            {loading ? (
+              <div className={`py-8 text-center text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Loading students…</div>
+            ) : students.length === 0 ? (
+              <div className={`py-8 text-center text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>No students found for this subject's department.</div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className={`min-w-full text-left text-sm ${isDark ? 'text-slate-200' : 'text-slate-900'}`}>
+                    <thead>
+                      <tr className={isDark ? 'border-b border-slate-700 text-slate-400' : 'border-b border-slate-200 text-slate-500'}>
+                        <th className="px-3 py-2 font-medium">#</th>
+                        <th className="px-3 py-2 font-medium">Roll No</th>
+                        <th className="px-3 py-2 font-medium">Name</th>
+                        <th className="px-3 py-2 font-medium">College ID</th>
+                        <th className="px-3 py-2 font-medium text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {students.map((s, idx) => (
+                        <tr key={s.id} className={isDark ? 'border-b border-slate-800' : 'border-b border-slate-100'}>
+                          <td className={`px-3 py-2.5 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>{idx + 1}</td>
+                          <td className="px-3 py-2.5 font-mono text-xs">{s.rollNumber}</td>
+                          <td className="px-3 py-2.5">{s.name}</td>
+                          <td className="px-3 py-2.5">{s.collegeId}</td>
+                          <td className="px-3 py-2.5 text-center">
+                            <div className="inline-flex items-center gap-1 rounded-lg p-0.5">
+                              <button
+                                onClick={() => onSetRecord(s.id, true)}
+                                className={`rounded-md px-3 py-1 text-xs font-medium transition
+                                  ${records[s.id] === true
+                                    ? 'bg-emerald-500 text-white shadow'
+                                    : isDark ? 'bg-slate-800 text-slate-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                  }`}
+                              >
+                                P
+                              </button>
+                              <button
+                                onClick={() => onSetRecord(s.id, false)}
+                                className={`rounded-md px-3 py-1 text-xs font-medium transition
+                                  ${records[s.id] === false
+                                    ? 'bg-red-500 text-white shadow'
+                                    : isDark ? 'bg-slate-800 text-slate-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                  }`}
+                              >
+                                A
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Summary + Save */}
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className={`flex items-center gap-4 text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    <span>Total: <strong className={isDark ? 'text-slate-200' : 'text-slate-700'}>{students.length}</strong></span>
+                    <span className="text-emerald-500">Present: <strong>{presentCount}</strong></span>
+                    <span className="text-red-500">Absent: <strong>{absentCount}</strong></span>
+                    {unmarkedCount > 0 && (
+                      <span className={isDark ? 'text-slate-500' : 'text-slate-400'}>Unmarked: <strong>{unmarkedCount}</strong></span>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className={`rounded-xl px-5 py-2.5 text-sm font-semibold transition
+                      ${saving ? 'opacity-60 cursor-not-allowed' : ''}
+                      bg-primary text-white hover:bg-primary/90 shadow-sm`}
+                  >
+                    {saving ? 'Saving…' : 'Save Attendance'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3369,7 +4092,7 @@ function FeesManager({
   onDeleteFee,
   deletingFeeId,
 }: FeesManagerProps) {
-  const isStaff = ['SUPER_ADMIN', 'CHAIRMAN', 'ADMIN', 'EXAM_CELL'].includes(role);
+  const isStaff = ['SUPER_ADMIN', 'CHAIRMAN', 'ADMIN', 'EXAM_CELL', 'ACCOUNTANT'].includes(role);
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState({ studentId: '', categoryId: '', amount: '', dueDate: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
